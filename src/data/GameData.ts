@@ -65,6 +65,19 @@ export const ABILITIES = {
         logType: 'system'
     },
     
+    summonSkeleton: {
+        id: 'summon_skeleton',
+        name: 'Summon Skeleton',
+        manaCost: 50,
+        castTime: 0,                  // instant
+        duration: 30000,              // 30 seconds
+        damageType: 'summon' as const,
+        description: 'Summon a skeleton warrior to fight alongside you for 30 seconds',
+        logMessage: (caster: string) => 
+            `${caster} raises a skeleton warrior from the bones of the fallen!`,
+        logType: 'player-magic'
+    },
+    
     // Easy to add more abilities:
     /*
     heal: {

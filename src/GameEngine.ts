@@ -15,6 +15,18 @@ interface Character {
     damage: number;
 }
 
+interface Summon {
+    name: string;
+    hp: number;
+    maxHp: number;
+    damage: number;
+    attackSpeed: number;
+    attackTimer: number;
+    timeRemaining: number;
+    sprite?: string;
+    spriteColor?: string;
+}
+
 interface Ability {
     id: string;
     name: string;
@@ -55,6 +67,10 @@ export class GameEngine {
     // ========== AURA STATE ==========
     private activeAuras: Set<string> = new Set();
     private manaReserved: number = 0;
+    
+    // ========== SUMMON STATE ==========
+    private summons: Summon[] = [];
+    private maxSummons: number = 3; // Maximum number of skeleton summons
     
     // ========== TIMING ==========
     private lastUpdate: number = Date.now();
@@ -102,6 +118,7 @@ export class GameEngine {
     // ========== ABILITIES ==========
     private holyStrike: Ability;
     private windfuryAura: any;  // Using any for now since it has different structure
+    private summonSkeleton: any;
     
     private initializeAbilities() {
         const holyStrikeData = ABILITIES.holyStrike;
@@ -131,6 +148,9 @@ export class GameEngine {
         
         // Initialize Windfury Aura
         this.windfuryAura = ABILITIES.windfuryAura;
+        
+        // Initialize Summon Skeleton
+        this.summonSkeleton = ABILITIES.summonSkeleton;
     }
     
     // ========== MAIN GAME LOOP ==========
@@ -141,7 +161,9 @@ export class GameEngine {
         
         this.updateMana(deltaTime);
         this.updateTimers(deltaTime);
+        this.updateSummons(deltaTime);
         this.processPlayerAction();
+        this.processSummonActions(deltaTime);
         this.processEnemyAction(deltaTime);
         this.checkCombatEnd();
         this.updateUI();
@@ -188,6 +210,55 @@ export class GameEngine {
         
         // Cast the spell
         this.castInstantSpell(this.holyStrike);
+    }
+    
+    public castSummonSkeleton() {
+        // Check if we can cast
+        if (this.player.hp <= 0) return;
+        if (this.globalCooldown > 0) return;
+        if (this.player.mana < this.summonSkeleton.manaCost) {
+            this.log(`Not enough mana! Need ${this.summonSkeleton.manaCost}, have ${this.player.mana}`, 'system');
+            return;
+        }
+        if (this.summons.length >= this.maxSummons) {
+            this.log(`Cannot summon more skeletons! (Max: ${this.maxSummons})`, 'system');
+            return;
+        }
+        
+        // Cancel melee swing if in progress
+        if (this.isSwinging) {
+            this.cancelMeleeSwing();
+        }
+        
+        // Flash the ability icon
+        const icons = document.querySelectorAll('.ability-icon');
+        icons.forEach(icon => {
+            if (icon.querySelector('.ability-icon-content')?.textContent === '💀') {
+                icon.classList.add('ability-activate');
+                setTimeout(() => icon.classList.remove('ability-activate'), 400);
+            }
+        });
+        
+        // Cast the spell
+        this.player.mana -= this.summonSkeleton.manaCost;
+        this.globalCooldown = CONFIG.GLOBAL_COOLDOWN;
+        
+        // Create the summon using skeleton enemy stats
+        const newSummon: Summon = {
+            name: 'Skeleton Minion',
+            hp: ENEMIES.skeleton.hp,
+            maxHp: ENEMIES.skeleton.hp,
+            damage: ENEMIES.skeleton.damage,
+            attackSpeed: ENEMIES.skeleton.attackSpeed,
+            attackTimer: 0,
+            timeRemaining: this.summonSkeleton.duration,
+            sprite: ENEMIES.skeleton.sprite,
+            spriteColor: ENEMIES.skeleton.spriteColor
+        };
+        
+        this.summons.push(newSummon);
+        this.log(this.summonSkeleton.logMessage(this.player.name), this.summonSkeleton.logType);
+        this.updateSummonSprites();
     }
     
     // ========== AURA MANAGEMENT ==========
@@ -240,6 +311,111 @@ export class GameEngine {
         }
     }
     
+    // ========== SUMMON MANAGEMENT ==========
+    private updateSummons(deltaTime: number) {
+        // Update summon timers and remove expired ones
+        const previousCount = this.summons.length;
+        this.summons = this.summons.filter(summon => {
+            summon.timeRemaining -= deltaTime;
+            
+            if (summon.timeRemaining <= 0) {
+                this.log(`${summon.name} crumbles to dust...`, 'system');
+                return false;
+            }
+            
+            if (summon.hp <= 0) {
+                this.log(`${summon.name} has been destroyed!`, 'damage');
+                return false;
+            }
+            
+            return true;
+        });
+        
+        // Update sprites if summon count changed
+        if (this.summons.length !== previousCount) {
+            this.updateSummonSprites();
+        }
+    }
+    
+    private updateSummonSprites() {
+        const summonContainer = document.getElementById('summon-container');
+        if (!summonContainer) return;
+        
+        // Clear existing sprites
+        summonContainer.innerHTML = '';
+        
+        // Add sprites for each summon
+        this.summons.forEach((summon, index) => {
+            const summonDiv = document.createElement('div');
+            summonDiv.className = 'summon-sprite';
+            summonDiv.style.position = 'absolute';
+            summonDiv.style.left = `${100 + index * 60}px`; // Stack them horizontally
+            summonDiv.style.bottom = '50px';
+            summonDiv.style.fontSize = '48px';
+            summonDiv.style.color = summon.spriteColor || '#ff4444';
+            summonDiv.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.8)';
+            summonDiv.style.zIndex = '5';
+            summonDiv.textContent = summon.sprite || 'S';
+            
+            // Add health bar
+            const healthBar = document.createElement('div');
+            healthBar.style.position = 'absolute';
+            healthBar.style.bottom = '-10px';
+            healthBar.style.left = '50%';
+            healthBar.style.transform = 'translateX(-50%)';
+            healthBar.style.width = '40px';
+            healthBar.style.height = '4px';
+            healthBar.style.background = '#333';
+            healthBar.style.border = '1px solid #000';
+            
+            const healthFill = document.createElement('div');
+            healthFill.style.width = `${(summon.hp / summon.maxHp) * 100}%`;
+            healthFill.style.height = '100%';
+            healthFill.style.background = '#ff4444';
+            
+            healthBar.appendChild(healthFill);
+            summonDiv.appendChild(healthBar);
+            summonContainer.appendChild(summonDiv);
+        });
+    }
+    
+    private processSummonActions(deltaTime: number) {
+        if (this.enemy.hp <= 0) return;
+        
+        this.summons.forEach(summon => {
+            summon.attackTimer += deltaTime;
+            
+            if (summon.attackTimer >= summon.attackSpeed) {
+                // Summon attacks the enemy
+                this.triggerAttackAnimation('summon');
+                this.showDamageNumber(summon.damage, 'physical', 'enemy');
+                
+                this.enemy.hp -= summon.damage;
+                this.log(`${summon.name} claws for ${summon.damage} damage!`, 'melee');
+                
+                summon.attackTimer = 0;
+            }
+        });
+        
+        // Update health bars on summon sprites
+        this.updateSummonHealthBars();
+    }
+    
+    private updateSummonHealthBars() {
+        const summonContainer = document.getElementById('summon-container');
+        if (!summonContainer) return;
+        
+        const summonDivs = summonContainer.getElementsByClassName('summon-sprite');
+        this.summons.forEach((summon, index) => {
+            if (summonDivs[index]) {
+                const healthFill = summonDivs[index].querySelector('div div') as HTMLElement;
+                if (healthFill) {
+                    healthFill.style.width = `${(summon.hp / summon.maxHp) * 100}%`;
+                }
+            }
+        });
+    }
+    
     // ========== PLAYER COMBAT ==========
     private processPlayerAction() {
         if (this.player.hp <= 0 || this.globalCooldown > 0) return;
@@ -268,6 +444,10 @@ export class GameEngine {
                     const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
                     const hasMana = this.player.mana >= this.holyStrike.manaCost;
                     return hpPercent < rule.conditionValue && cooldown <= 0 && hasMana;
+                } else if (rule.action === 'summon_skeleton') {
+                    const hasMana = this.player.mana >= this.summonSkeleton.manaCost;
+                    const canSummon = this.summons.length < this.maxSummons;
+                    return hpPercent < rule.conditionValue && hasMana && canSummon;
                 } else if (rule.action === 'toggle_windfury') {
                     // Only suggest toggle if it would change state
                     const isActive = this.activeAuras.has('windfury_aura');
@@ -281,6 +461,10 @@ export class GameEngine {
                     const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
                     const hasMana = this.player.mana >= this.holyStrike.manaCost;
                     return hpPercent >= rule.conditionValue && cooldown <= 0 && hasMana;
+                } else if (rule.action === 'summon_skeleton') {
+                    const hasMana = this.player.mana >= this.summonSkeleton.manaCost;
+                    const canSummon = this.summons.length < this.maxSummons;
+                    return hpPercent >= rule.conditionValue && hasMana && canSummon;
                 } else if (rule.action === 'toggle_windfury') {
                     // Only suggest toggle if it would change state
                     const isActive = this.activeAuras.has('windfury_aura');
@@ -294,6 +478,10 @@ export class GameEngine {
                     const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
                     const hasMana = this.player.mana >= this.holyStrike.manaCost;
                     return cooldown <= 0 && hasMana;
+                } else if (rule.action === 'summon_skeleton') {
+                    const hasMana = this.player.mana >= this.summonSkeleton.manaCost;
+                    const canSummon = this.summons.length < this.maxSummons;
+                    return hasMana && canSummon;
                 } else if (rule.action === 'toggle_windfury') {
                     // For 'always', only toggle if not already active
                     return !this.activeAuras.has('windfury_aura');
@@ -313,6 +501,10 @@ export class GameEngine {
                     this.cancelMeleeSwing();
                 }
                 this.castInstantSpell(this.holyStrike);
+                break;
+            
+            case 'summon_skeleton':
+                this.castSummonSkeleton();
                 break;
             
             case 'melee':
@@ -400,6 +592,10 @@ export class GameEngine {
                     e.preventDefault();
                     this.toggleWindfuryAura();
                     break;
+                case '3':
+                    e.preventDefault();
+                    this.castSummonSkeleton();
+                    break;
             }
         });
     }
@@ -455,6 +651,7 @@ export class GameEngine {
                     % → Use 
                     <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
                         <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
+                        <option value="summon_skeleton" ${rule.action === 'summon_skeleton' ? 'selected' : ''}>Summon Skeleton</option>
                         <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
                         <option value="toggle_windfury" ${rule.action === 'toggle_windfury' ? 'selected' : ''}>Toggle Windfury</option>
                         <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
@@ -468,6 +665,7 @@ export class GameEngine {
                     % → Use 
                     <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
                         <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
+                        <option value="summon_skeleton" ${rule.action === 'summon_skeleton' ? 'selected' : ''}>Summon Skeleton</option>
                         <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
                         <option value="toggle_windfury" ${rule.action === 'toggle_windfury' ? 'selected' : ''}>Toggle Windfury</option>
                         <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
@@ -478,6 +676,7 @@ export class GameEngine {
                     Always → Use 
                     <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
                         <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
+                        <option value="summon_skeleton" ${rule.action === 'summon_skeleton' ? 'selected' : ''}>Summon Skeleton</option>
                         <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
                         <option value="toggle_windfury" ${rule.action === 'toggle_windfury' ? 'selected' : ''}>Toggle Windfury</option>
                         <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
@@ -718,14 +917,33 @@ export class GameEngine {
     }
     
     private enemyAttack() {
-        this.triggerAttackAnimation('enemy');
-        this.showDamageNumber(this.enemy.damage, 'enemy', 'player');
-        
-        this.player.hp -= this.enemy.damage;
-        this.log(
-            `${this.enemy.name} slashes for ${this.enemy.damage} damage!`,
-            'damage'
-        );
+        // Enemy has a chance to attack summons if they exist
+        if (this.summons.length > 0 && Math.random() < 0.3) {
+            // 30% chance to attack a random summon
+            const targetSummon = this.summons[Math.floor(Math.random() * this.summons.length)];
+            
+            this.triggerAttackAnimation('enemy');
+            this.showDamageNumber(this.enemy.damage, 'enemy', 'player');
+            
+            targetSummon.hp -= this.enemy.damage;
+            this.log(
+                `${this.enemy.name} attacks ${targetSummon.name} for ${this.enemy.damage} damage!`,
+                'damage'
+            );
+            
+            // Update summon health bars immediately
+            this.updateSummonHealthBars();
+        } else {
+            // Attack the player
+            this.triggerAttackAnimation('enemy');
+            this.showDamageNumber(this.enemy.damage, 'enemy', 'player');
+            
+            this.player.hp -= this.enemy.damage;
+            this.log(
+                `${this.enemy.name} slashes for ${this.enemy.damage} damage!`,
+                'damage'
+            );
+        }
     }
     
     // ========== COMBAT END CONDITIONS ==========
@@ -771,6 +989,7 @@ export class GameEngine {
         this.updateStats();
         this.updateBars();
         this.updateCombatLog();
+        this.updateSummonHealthBars();
     }
     
     private updateStats() {
@@ -849,14 +1068,43 @@ export class GameEngine {
                 </div>
             `;
             
+            // Summon Skeleton ability
+            const canSummon = this.summons.length < this.maxSummons;
+            const summonMana = this.player.mana >= this.summonSkeleton.manaCost;
+            const canCastSummon = summonMana && canSummon && this.globalCooldown <= 0 && this.player.hp > 0;
+            
+            const summonTooltip = `Summon Skeleton [3]&#10;Mana Cost: 50&#10;Duration: 30s&#10;Damage: ${ENEMIES.skeleton.damage} per attack&#10;HP: ${ENEMIES.skeleton.hp}&#10;Max Summons: ${this.maxSummons}&#10;Current: ${this.summons.length}/${this.maxSummons}&#10;&#10;Click or press 3 to summon`;
+            
+            const summonIcon = `
+                <div class="ability-icon${canCastSummon ? ' ability-ready' : ' disabled'}" 
+                     data-tooltip="${summonTooltip}"
+                     onclick="window.game.castSummonSkeleton()"
+                     style="cursor: ${canCastSummon ? 'pointer' : 'not-allowed'};">
+                    <div class="ability-icon-content"${!summonMana || !canSummon ? ' style="color: #666;"' : ''}>💀</div>
+                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">3</div>
+                </div>
+            `;
+            
             let abilityDisplay = `
                 <div class="ability-cooldowns">
                     ${holyStrikeIcon}
                     ${windfuryIcon}
+                    ${summonIcon}
                 </div>
             `;
             
             const manaReservedText = windfuryActive ? ` (${Math.floor(this.player.baseMana * 0.5)} reserved)` : '';
+            
+            // Create summons display
+            let summonsDisplay = '';
+            if (this.summons.length > 0) {
+                summonsDisplay = '<div style="margin-top: 10px; padding: 5px; border: 1px solid #333; background: #1a1a1a;"><strong>Active Summons:</strong>';
+                this.summons.forEach((summon, index) => {
+                    const timeLeft = (summon.timeRemaining / 1000).toFixed(0);
+                    summonsDisplay += `<div style="color: #d4d4d8;">💀 ${summon.name} #${index + 1} - HP: ${summon.hp}/${summon.maxHp} - Time: ${timeLeft}s</div>`;
+                });
+                summonsDisplay += '</div>';
+            }
             
             playerStats.innerHTML = `
                 <div><strong>Cleric</strong></div>
@@ -865,6 +1113,7 @@ export class GameEngine {
                 <div>Status: ${playerStatus}</div>
                 ${windfuryActive ? '<div style="color: #51cf66;">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
                 ${abilityDisplay}
+                ${summonsDisplay}
             `;
         }
         
@@ -929,8 +1178,8 @@ export class GameEngine {
     }
     
     // ========== VISUAL EFFECTS ==========
-    private triggerAttackAnimation(attacker: 'player' | 'enemy') {
-        if (attacker === 'player') {
+    private triggerAttackAnimation(attacker: 'player' | 'enemy' | 'summon') {
+        if (attacker === 'player' || attacker === 'summon') {
             const playerSprite = document.getElementById('player-sprite');
             const enemySprite = document.getElementById('enemy-sprite');
             
