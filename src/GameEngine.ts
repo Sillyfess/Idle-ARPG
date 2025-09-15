@@ -601,29 +601,66 @@ export class GameEngine {
     }
     
     private updateStats() {
-        const stats = document.getElementById('stats');
-        if (!stats) return;
+        const playerStats = document.getElementById('player-stats');
+        const enemyStats = document.getElementById('enemy-stats');
         
-        let playerStatus = 'Ready';
-        if (this.player.hp <= 0) {
-            playerStatus = 'Dead';
-        } else if (this.isSwinging) {
-            const swingTimeLeft = (this.currentSwingTime / 1000).toFixed(1);
-            playerStatus = `Swinging: ${swingTimeLeft}s`;
-        } else if (this.globalCooldown > 0) {
-            playerStatus = `GCD: ${(this.globalCooldown / 1000).toFixed(1)}s`;
+        if (playerStats) {
+            let playerStatus = 'Ready';
+            if (this.player.hp <= 0) {
+                playerStatus = 'Dead';
+            } else if (this.isSwinging) {
+                const swingTimeLeft = (this.currentSwingTime / 1000).toFixed(1);
+                playerStatus = `Swinging: ${swingTimeLeft}s`;
+            } else if (this.globalCooldown > 0) {
+                playerStatus = `GCD: ${(this.globalCooldown / 1000).toFixed(1)}s`;
+            }
+            
+            // Create ability cooldown display
+            const holyStrikeCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+            const maxCooldown = this.holyStrike.cooldown || 6000;
+            const cooldownPercent = holyStrikeCooldown > 0 ? ((maxCooldown - holyStrikeCooldown) / maxCooldown) * 100 : 0;
+            const isOnCooldown = holyStrikeCooldown > 0;
+            
+            let abilityDisplay = '';
+            if (isOnCooldown) {
+                abilityDisplay = `
+                    <div class="ability-cooldowns">
+                        <div class="ability-icon">
+                            <div class="ability-icon-content">H</div>
+                            <div class="cooldown-overlay"></div>
+                            <div class="cooldown-sweep" style="background: conic-gradient(transparent ${cooldownPercent}%, rgba(255, 255, 255, 0.3) ${cooldownPercent}%);"></div>
+                            <div class="cooldown-text">${(holyStrikeCooldown / 1000).toFixed(1)}</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                abilityDisplay = `
+                    <div class="ability-cooldowns">
+                        <div class="ability-icon ability-ready">
+                            <div class="ability-icon-content">H</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            playerStats.innerHTML = `
+                <div><strong>Cleric</strong></div>
+                <div>HP: ${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</div>
+                <div>Mana: ${this.player.mana}/${this.player.maxMana}</div>
+                <div>Status: ${playerStatus}</div>
+                ${abilityDisplay}
+            `;
         }
         
-        // Show Holy Strike cooldown if active
-        const holyStrikeCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
-        const cooldownText = holyStrikeCooldown > 0 ? ` | Holy Strike CD: ${(holyStrikeCooldown / 1000).toFixed(1)}s` : '';
-        
-        const enemyNextAttack = ((this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
-        
-        stats.innerHTML = `
-            <div>Player: ${this.player.hp}/${this.player.maxHp} HP (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%) | ${this.player.mana}/${this.player.maxMana} Mana | ${playerStatus}${cooldownText}</div>
-            <div>Enemy: ${this.enemy.hp}/${this.enemy.maxHp} HP | Next attack: ${enemyNextAttack}s</div>
-        `;
+        if (enemyStats) {
+            const enemyNextAttack = ((this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
+            
+            enemyStats.innerHTML = `
+                <div><strong>${this.enemy.name}</strong></div>
+                <div>HP: ${this.enemy.hp}/${this.enemy.maxHp}</div>
+                <div>Next Attack: ${enemyNextAttack}s</div>
+            `;
+        }
     }
     
     private updateBars() {
@@ -678,14 +715,14 @@ export class GameEngine {
             
             if (playerSprite) {
                 playerSprite.classList.add('attacking');
-                setTimeout(() => playerSprite.classList.remove('attacking'), CONFIG.ANIMATION_DURATION);
+                setTimeout(() => playerSprite.classList.remove('attacking'), 200);  // Faster
             }
             
             if (enemySprite) {
                 setTimeout(() => {
                     enemySprite.classList.add('damaged');
-                    setTimeout(() => enemySprite.classList.remove('damaged'), CONFIG.ANIMATION_DURATION);
-                }, 150);
+                    setTimeout(() => enemySprite.classList.remove('damaged'), 150);  // Faster
+                }, 100);  // Hit comes quicker
             }
         } else {
             const enemySprite = document.getElementById('enemy-sprite');
@@ -693,14 +730,14 @@ export class GameEngine {
             
             if (enemySprite) {
                 enemySprite.classList.add('enemy-attacking');
-                setTimeout(() => enemySprite.classList.remove('enemy-attacking'), CONFIG.ANIMATION_DURATION);
+                setTimeout(() => enemySprite.classList.remove('enemy-attacking'), 200);  // Faster
             }
             
             if (playerSprite) {
                 setTimeout(() => {
                     playerSprite.classList.add('damaged');
-                    setTimeout(() => playerSprite.classList.remove('damaged'), CONFIG.ANIMATION_DURATION);
-                }, 150);
+                    setTimeout(() => playerSprite.classList.remove('damaged'), 150);  // Faster
+                }, 100);  // Hit comes quicker
             }
         }
     }
