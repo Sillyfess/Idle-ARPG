@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Idle ARPG - Combat Test </title>
+        <style>
+            body {
+                font-family: monospace;
+                background: #0f0f0f;
+                color: #f8f5f5;
+                padding: 200px;
+            }
+            #combat-log {
+                height: 400px;
+                overflow-y: auto;
+                border: 2px solid #130879;
+                padding: 10px;
+                margin-top: 20px;
+            }
+            .damage { color: #ff6b6b; }
+            .heal { color: #51cf66; }
+            .mana { color: #339af0; }
+            .system { color: #868e96; }
+            .melee { color: #ffa726; font-style: italic}
+        </style>
+    </head>
+    <body>
+        <div id="stats"></div>
+        <div id="combat-log"></div>
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>
