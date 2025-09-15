@@ -12,7 +12,7 @@ export const CONFIG = {
     
     // UI
     MAX_COMBAT_LOG_ENTRIES: 20,
-    DAMAGE_NUMBER_DURATION: 1500,     // ms before fade
+    DAMAGE_NUMBER_DURATION: 800,      // ms before fade (RuneScape-style)
     ANIMATION_DURATION: 300,          // ms for attack animations
 };
 
@@ -139,6 +139,10 @@ export const DAMAGE_TYPES = {
     enemy: {
         cssClass: 'damage-enemy',
         color: '#ef5350',
+    },
+    healing: {
+        cssClass: 'damage-healing',
+        color: '#51cf66',
     },
 };
 

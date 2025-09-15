@@ -80,6 +80,18 @@ export class GameEngine {
     private combatLog: CombatLogEntry[] = [];
     private combatRules: any[] = [];
     
+    // ========== DAMAGE NUMBER TRACKING ==========
+    private playerDamageNumbers: HTMLElement[] = [];
+    private enemyDamageNumbers: HTMLElement[] = [];
+    
+    // Diamond pattern positions for splat stacking
+    private readonly diamondPositions = [
+        { x: 0, y: 0 },      // Center (1st)
+        { x: 0, y: -35 },    // Top (2nd)
+        { x: -40, y: -17 },  // Left (3rd)
+        { x: 40, y: -17 },   // Right (4th)
+    ];
+    
     // ========== INITIALIZATION ==========
     constructor() {
         this.player = this.createPlayer();
@@ -139,6 +151,10 @@ export class GameEngine {
                         this.player.hp = Math.min(this.player.hp + healAmount, this.player.maxHp);
                         const actualHeal = this.player.hp - oldHp;
                         if (actualHeal > 0) {
+                            // Show heal splat on player after a slight delay
+                            setTimeout(() => {
+                                this.showDamageNumber(actualHeal, 'healing', 'player');
+                            }, 100);
                             this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
                         }
                     }
@@ -895,6 +911,10 @@ export class GameEngine {
                                 this.player.hp = Math.min(this.player.hp + ability.damage, this.player.maxHp);
                                 const actualHeal = this.player.hp - oldHp;
                                 if (actualHeal > 0) {
+                                    // Show heal splat on player after a slight delay
+                                    setTimeout(() => {
+                                        this.showDamageNumber(actualHeal, 'healing', 'player');
+                                    }, 150);
                                     this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
                                 }
                             }
@@ -1183,7 +1203,7 @@ export class GameEngine {
             const playerSprite = document.getElementById('player-sprite');
             const enemySprite = document.getElementById('enemy-sprite');
             
-            if (playerSprite) {
+            if (playerSprite && attacker === 'player') {
                 playerSprite.classList.add('attacking');
                 setTimeout(() => playerSprite.classList.remove('attacking'), 200);  // Faster
             }
@@ -1216,26 +1236,82 @@ export class GameEngine {
         const arena = document.getElementById('combat-arena');
         if (!arena) return;
         
-        const damageElement = document.createElement('div');
-        const damageTypeConfig = DAMAGE_TYPES[type as keyof typeof DAMAGE_TYPES];
-        damageElement.className = `damage-number ${damageTypeConfig?.cssClass || ''}`;
-        damageElement.textContent = damage.toString();
+        // Get the appropriate stack for this target
+        const stack = target === 'enemy' ? this.enemyDamageNumbers : this.playerDamageNumbers;
+        
+        // Remove oldest if we have 4 already
+        if (stack.length >= 4) {
+            const oldest = stack.shift();
+            oldest?.remove();
+        }
+        
+        // Create splat container
+        const splatElement = document.createElement('div');
+        splatElement.className = 'damage-splat';
+        
+        // Determine splat color based on type
+        let splatColor = '#cc0000'; // Default red
+        if (type === 'healing') {
+            splatColor = '#00cc00'; // Green for healing
+        } else if (type === 'holy') {
+            splatColor = '#4444ff'; // Blue for holy
+        }
+        
+        // Add the splat background
+        const splatBg = document.createElement('div');
+        splatBg.className = 'splat-bg';
+        splatBg.innerHTML = `
+            <svg width="50" height="45" viewBox="0 0 50 45">
+                <ellipse cx="25" cy="22" rx="23" ry="20" fill="${splatColor}" stroke="#000" stroke-width="2"/>
+            </svg>
+        `;
+        
+        // Add the damage number
+        const damageText = document.createElement('div');
+        damageText.className = 'splat-text';
+        damageText.textContent = damage.toString();
+        
+        splatElement.appendChild(splatBg);
+        splatElement.appendChild(damageText);
+        
+        // Get position for this splat in the diamond
+        const position = this.diamondPositions[stack.length] || this.diamondPositions[0];
         
         // Position based on target
         if (target === 'enemy') {
-            damageElement.style.right = '50px';
-            damageElement.style.left = 'auto';
+            splatElement.style.right = `${100 - position.x}px`;
+            splatElement.style.left = 'auto';
         } else {
-            damageElement.style.left = '50px';
-            damageElement.style.right = 'auto';
+            splatElement.style.left = `${100 + position.x}px`;
+            splatElement.style.right = 'auto';
         }
-        damageElement.style.top = '40%';
         
-        arena.appendChild(damageElement);
+        // Convert y offset to pixels and position from top
+        const baseTopPixels = arena.offsetHeight * 0.45;
+        splatElement.style.top = `${baseTopPixels + position.y}px`;
         
-        // Remove after animation
+        arena.appendChild(splatElement);
+        stack.push(splatElement);
+        
+        // Remove after duration
         setTimeout(() => {
-            damageElement.remove();
+            const index = stack.indexOf(splatElement);
+            if (index > -1) {
+                stack.splice(index, 1);
+            }
+            splatElement.remove();
+            
+            // Reposition remaining splats in diamond pattern
+            stack.forEach((elem, i) => {
+                const newPos = this.diamondPositions[i] || this.diamondPositions[0];
+                if (target === 'enemy') {
+                    elem.style.right = `${100 - newPos.x}px`;
+                } else {
+                    elem.style.left = `${100 + newPos.x}px`;
+                }
+                const baseTopPixels = arena.offsetHeight * 0.45;
+                elem.style.top = `${baseTopPixels + newPos.y}px`;
+            });
         }, CONFIG.DAMAGE_NUMBER_DURATION);
     }
 }
