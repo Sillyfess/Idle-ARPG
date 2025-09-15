@@ -12,7 +12,10 @@ interface Character {
     maxMana: number;
     baseMana: number;  // Base mana before reservations
     manaRegen: number;
+    baseManaRegen: number;  // Base mana regen before equipment
     damage: number;
+    baseDamage: number;  // Base damage before equipment
+    armor: number;  // Flat damage reduction
 }
 
 interface Summon {
@@ -25,6 +28,16 @@ interface Summon {
     timeRemaining: number;
     sprite?: string;
     spriteColor?: string;
+}
+
+interface Item {
+    id: string;
+    name: string;
+    slot: 'weapon' | 'armor';
+    damage?: number;
+    armor?: number;
+    manaRegen?: number;
+    equipped: boolean;
 }
 
 interface Ability {
@@ -93,6 +106,15 @@ export class GameEngine {
         { x: 40, y: -17 },   // Right (4th)
     ];
     
+    // ========== EQUIPMENT & INVENTORY ==========
+    private equipment: Map<string, Item | null> = new Map([
+        ['weapon', null],
+        ['armor', null]
+    ]);
+    private inventory: Item[] = [];
+    private readonly maxInventorySize = 20;
+    private inventoryOpen = false;
+    
     // ========== INITIALIZATION ==========
     constructor() {
         this.player = this.createPlayer();
@@ -108,6 +130,98 @@ export class GameEngine {
         return Math.round(baseDamage * variance);
     }
     
+    // ========== EQUIPMENT MANAGEMENT ==========
+    private recalculateStats() {
+        // Reset to base values
+        this.player.damage = this.player.baseDamage;
+        this.player.manaRegen = this.player.baseManaRegen;
+        this.player.armor = 0;
+        
+        // Add equipment bonuses
+        this.equipment.forEach(item => {
+            if (!item) return;
+            this.player.damage += item.damage || 0;
+            this.player.armor += item.armor || 0;
+            this.player.manaRegen += item.manaRegen || 0;
+        });
+    }
+    
+    public equipItem(itemId: string) {
+        const item = this.inventory.find(i => i.id === itemId);
+        if (!item) return;
+        
+        // Get current equipped item in this slot
+        const currentEquipped = this.equipment.get(item.slot);
+        
+        // Unequip current item if exists
+        if (currentEquipped) {
+            currentEquipped.equipped = false;
+            // Don't add it back to inventory, it's already there
+        }
+        
+        // Equip new item
+        item.equipped = true;
+        this.equipment.set(item.slot, item);
+        
+        // Recalculate stats
+        this.recalculateStats();
+        
+        this.log(`Equipped ${item.name}`, 'system');
+        this.updateInventoryUI();
+    }
+    
+    public unequipItem(slot: string) {
+        const item = this.equipment.get(slot);
+        if (!item) return;
+        
+        item.equipped = false;
+        this.equipment.set(slot, null);
+        
+        // Recalculate stats
+        this.recalculateStats();
+        
+        this.log(`Unequipped ${item.name}`, 'system');
+        this.updateInventoryUI();
+    }
+    
+    private generateItemDrop(): Item | null {
+        // 20% chance to drop an item
+        if (Math.random() > 0.2) return null;
+        
+        // 50/50 chance for weapon or armor
+        const isWeapon = Math.random() < 0.5;
+        
+        if (isWeapon) {
+            return {
+                id: 'item_' + Date.now(),
+                name: 'Rusty Sword',
+                slot: 'weapon',
+                damage: 2,
+                equipped: false
+            };
+        } else {
+            return {
+                id: 'item_' + Date.now(),
+                name: 'Leather Armor',
+                slot: 'armor',
+                armor: 2,
+                manaRegen: 1,
+                equipped: false
+            };
+        }
+    }
+    
+    private addToInventory(item: Item) {
+        if (this.inventory.length >= this.maxInventorySize) {
+            this.log(`Inventory full! ${item.name} was lost.`, 'system');
+            return;
+        }
+        
+        this.inventory.push(item);
+        this.log(`${item.name} added to inventory!`, 'loot');
+        this.updateInventoryUI();
+    }
+    
     private createPlayer(): Character {
         return {
             name: "Cleric",
@@ -117,7 +231,10 @@ export class GameEngine {
             maxMana: PLAYER_CONFIG.BASE_MANA,
             baseMana: PLAYER_CONFIG.BASE_MANA,
             manaRegen: PLAYER_CONFIG.BASE_MANA_REGEN,
-            damage: PLAYER_CONFIG.MELEE_DAMAGE
+            baseManaRegen: PLAYER_CONFIG.BASE_MANA_REGEN,
+            damage: PLAYER_CONFIG.MELEE_DAMAGE,
+            baseDamage: PLAYER_CONFIG.MELEE_DAMAGE,
+            armor: 0
         };
     }
     
@@ -130,7 +247,10 @@ export class GameEngine {
             maxMana: 0,
             baseMana: 0,
             manaRegen: 0,
-            damage: enemyType.damage
+            baseManaRegen: 0,
+            damage: enemyType.damage,
+            baseDamage: enemyType.damage,
+            armor: 0
         };
     }
     
@@ -272,7 +392,7 @@ export class GameEngine {
         this.player.mana -= this.summonSkeleton.manaCost;
         this.globalCooldown = CONFIG.GLOBAL_COOLDOWN;
         
-        // Create the summon with damage based on player's melee damage
+        // Create the summon with damage based on player's current melee damage (including equipment)
         const summonBaseDamage = Math.round(this.player.damage * this.summonSkeleton.summonDamageMultiplier);
         const newSummon: Summon = {
             name: 'Skeleton Minion',
@@ -602,6 +722,7 @@ export class GameEngine {
     
     private initializeUI() {
         this.renderRules();
+        this.createInventoryUI();
         
         // Add event listener for add rule button
         const addBtn = document.getElementById('add-rule-btn');
@@ -629,8 +750,139 @@ export class GameEngine {
                     e.preventDefault();
                     this.castSummonSkeleton();
                     break;
+                case 'i':
+                case 'I':
+                    e.preventDefault();
+                    this.toggleInventory();
+                    break;
             }
         });
+    }
+    
+    // ========== INVENTORY UI ==========
+    private createInventoryUI() {
+        // Create inventory container
+        const inventoryContainer = document.createElement('div');
+        inventoryContainer.id = 'inventory-container';
+        inventoryContainer.style.cssText = `
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+        `;
+        
+        // Create inventory button
+        const inventoryBtn = document.createElement('button');
+        inventoryBtn.id = 'inventory-button';
+        inventoryBtn.innerHTML = `Inventory (${this.inventory.length}/${this.maxInventorySize}) [I]`;
+        inventoryBtn.style.cssText = `
+            padding: 8px 15px;
+            background: #2a2a2a;
+            border: 2px solid #444;
+            color: #d4d4d8;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        `;
+        inventoryBtn.onclick = () => this.toggleInventory();
+        
+        // Create inventory panel (hidden by default)
+        const inventoryPanel = document.createElement('div');
+        inventoryPanel.id = 'inventory-panel';
+        inventoryPanel.style.cssText = `
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            padding: 10px;
+            display: none;
+            max-height: 500px;
+            overflow-y: auto;
+        `;
+        
+        inventoryContainer.appendChild(inventoryBtn);
+        inventoryContainer.appendChild(inventoryPanel);
+        document.body.appendChild(inventoryContainer);
+        
+        this.updateInventoryUI();
+    }
+    
+    public toggleInventory() {
+        this.inventoryOpen = !this.inventoryOpen;
+        const panel = document.getElementById('inventory-panel');
+        if (panel) {
+            panel.style.display = this.inventoryOpen ? 'block' : 'none';
+        }
+        if (this.inventoryOpen) {
+            this.updateInventoryUI();
+        }
+    }
+    
+    private updateInventoryUI() {
+        const panel = document.getElementById('inventory-panel');
+        const button = document.getElementById('inventory-button');
+        
+        if (button) {
+            button.innerHTML = `Inventory (${this.inventory.length}/${this.maxInventorySize}) [I]`;
+        }
+        
+        if (!panel) return;
+        
+        let html = '<h3 style="color: #d4d4d8; margin: 0 0 10px 0;">Equipment</h3>';
+        
+        // Show equipped items
+        const weapon = this.equipment.get('weapon');
+        const armor = this.equipment.get('armor');
+        
+        html += '<div style="margin-bottom: 15px;">';
+        html += `<div style="padding: 5px; border: 1px solid #333; margin-bottom: 5px;">`;
+        html += `<strong>Weapon:</strong> ${weapon ? `${weapon.name} (+${weapon.damage} damage)` : 'Empty'}`;
+        if (weapon) {
+            html += ` <button onclick="window.game.unequipItem('weapon')" style="margin-left: 10px; padding: 2px 8px; background: #444; border: 1px solid #666; color: #d4d4d8; cursor: pointer;">Unequip</button>`;
+        }
+        html += '</div>';
+        
+        html += `<div style="padding: 5px; border: 1px solid #333;">`;
+        html += `<strong>Armor:</strong> ${armor ? `${armor.name} (+${armor.armor} armor, +${armor.manaRegen} mana/s)` : 'Empty'}`;
+        if (armor) {
+            html += ` <button onclick="window.game.unequipItem('armor')" style="margin-left: 10px; padding: 2px 8px; background: #444; border: 1px solid #666; color: #d4d4d8; cursor: pointer;">Unequip</button>`;
+        }
+        html += '</div>';
+        html += '</div>';
+        
+        html += '<h3 style="color: #d4d4d8; margin: 10px 0;">Inventory</h3>';
+        
+        if (this.inventory.length === 0) {
+            html += '<div style="color: #888;">No items in inventory</div>';
+        } else {
+            html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">';
+            
+            // Show unequipped items only
+            const unequippedItems = this.inventory.filter(item => !item.equipped);
+            
+            unequippedItems.forEach(item => {
+                let itemStats = '';
+                if (item.damage) itemStats += `+${item.damage} dmg`;
+                if (item.armor) itemStats += `+${item.armor} armor`;
+                if (item.manaRegen) itemStats += ` +${item.manaRegen} mana/s`;
+                
+                html += `
+                    <div style="padding: 5px; border: 1px solid #333; background: #222;">
+                        <div style="color: #d4d4d8; font-weight: bold;">${item.name}</div>
+                        <div style="color: #888; font-size: 12px;">${item.slot} - ${itemStats}</div>
+                        <button onclick="window.game.equipItem('${item.id}')" style="margin-top: 5px; padding: 2px 8px; background: #2a4a2a; border: 1px solid #51cf66; color: #51cf66; cursor: pointer; width: 100%;">Equip</button>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+        }
+        
+        panel.innerHTML = html;
     }
     
     private renderRules() {
@@ -965,34 +1217,45 @@ export class GameEngine {
     
     private enemyAttack() {
         // Calculate damage with variance
-        const damage = this.calculateDamageWithVariance(this.enemy.damage);
+        const baseDamage = this.calculateDamageWithVariance(this.enemy.damage);
         
         // Enemy has a chance to attack summons if they exist
         if (this.summons.length > 0 && Math.random() < 0.3) {
             // 30% chance to attack a random summon
             const targetSummon = this.summons[Math.floor(Math.random() * this.summons.length)];
             
+            // Summons don't have armor
             this.triggerAttackAnimation('enemy');
-            this.showDamageNumber(damage, 'enemy', 'player');
+            this.showDamageNumber(baseDamage, 'enemy', 'player');
             
-            targetSummon.hp -= damage;
+            targetSummon.hp -= baseDamage;
             this.log(
-                `${this.enemy.name} attacks ${targetSummon.name} for ${damage} damage!`,
+                `${this.enemy.name} attacks ${targetSummon.name} for ${baseDamage} damage!`,
                 'damage'
             );
             
             // Update summon health bars immediately
             this.updateSummonHealthBars();
         } else {
-            // Attack the player
-            this.triggerAttackAnimation('enemy');
-            this.showDamageNumber(damage, 'enemy', 'player');
+            // Attack the player - apply armor reduction
+            const damageAfterArmor = Math.max(1, baseDamage - this.player.armor); // Minimum 1 damage
             
-            this.player.hp -= damage;
-            this.log(
-                `${this.enemy.name} slashes for ${damage} damage!`,
-                'damage'
-            );
+            this.triggerAttackAnimation('enemy');
+            this.showDamageNumber(damageAfterArmor, 'enemy', 'player');
+            
+            this.player.hp -= damageAfterArmor;
+            
+            if (this.player.armor > 0) {
+                this.log(
+                    `${this.enemy.name} slashes for ${baseDamage} damage (${damageAfterArmor} after ${this.player.armor} armor)`,
+                    'damage'
+                );
+            } else {
+                this.log(
+                    `${this.enemy.name} slashes for ${damageAfterArmor} damage!`,
+                    'damage'
+                );
+            }
         }
     }
     
@@ -1000,6 +1263,13 @@ export class GameEngine {
     private checkCombatEnd() {
         if (this.enemy.hp <= 0) {
             this.log(`${this.enemy.name} defeated!`, 'system');
+            
+            // Check for item drop
+            const drop = this.generateItemDrop();
+            if (drop) {
+                this.addToInventory(drop);
+            }
+            
             this.enemy = this.createEnemy(this.currentEnemyType);
             this.enemyAttackTimer = 0;
             this.log(`New ${this.enemy.name} appears!`, 'system');
@@ -1171,8 +1441,9 @@ export class GameEngine {
             playerStats.innerHTML = `
                 <div><strong>Cleric</strong></div>
                 <div>HP: ${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</div>
-                <div>Mana: ${this.player.mana}/${this.player.maxMana}${manaReservedText}</div>
+                <div>Mana: ${this.player.mana}/${this.player.maxMana}${manaReservedText} (Regen: ${this.player.manaRegen}/s)</div>
                 <div>Damage: ${playerMinDamage}-${playerMaxDamage}</div>
+                <div>Armor: ${this.player.armor} (reduces damage taken)</div>
                 <div>Status: ${playerStatus}</div>
                 ${windfuryActive ? '<div style="color: #51cf66;">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
                 ${abilityDisplay}

@@ -157,6 +157,7 @@ export const LOG_TYPES = {
     'system': { cssClass: 'system', color: '#868e96' },
     'heal': { cssClass: 'heal', color: '#51cf66' },
     'mana': { cssClass: 'mana', color: '#339af0' },
+    'loot': { cssClass: 'loot', color: '#ffd93d' },
 };
 
 // Combat AI Rules - Controls when abilities are used
