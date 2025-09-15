@@ -57,12 +57,15 @@ export class GameEngine {
     
     // ========== UI STATE ==========
     private combatLog: CombatLogEntry[] = [];
+    private combatRules: any[] = [];
     
     // ========== INITIALIZATION ==========
     constructor() {
         this.player = this.createPlayer();
         this.enemy = this.createEnemy(this.currentEnemyType);
         this.initializeAbilities();
+        this.loadCombatRules();
+        this.initializeUI();
     }
     
     private createPlayer(): Character {
@@ -171,17 +174,323 @@ export class GameEngine {
     private processPlayerAction() {
         if (this.player.hp <= 0 || this.globalCooldown > 0) return;
         
-        // Check if Holy Strike is available (has mana AND not on cooldown)
-        const holyStrikeCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
-        const canCastHolyStrike = this.player.mana >= this.holyStrike.manaCost && holyStrikeCooldown <= 0;
+        // Evaluate combat rules in priority order
+        const sortedRules = [...this.combatRules].sort((a, b) => a.priority - b.priority);
         
-        if (canCastHolyStrike) {
-            if (this.isSwinging) {
-                this.cancelMeleeSwing();
+        for (const rule of sortedRules) {
+            if (!rule.enabled) continue;
+            
+            if (this.checkSimpleRuleCondition(rule)) {
+                this.executeAction(rule.action);
+                break;  // Execute first matching rule
             }
-            this.castInstantSpell(this.holyStrike);
-        } else if (!this.isSwinging) {
-            this.startMeleeSwing();
+        }
+    }
+    
+    // Check simple rule conditions (for the UI)
+    private checkSimpleRuleCondition(rule: any): boolean {
+        const hpPercent = (this.player.hp / this.player.maxHp) * 100;
+        
+        switch (rule.conditionType) {
+            case 'hp_below':
+                // Also check if ability is available
+                if (rule.action === 'holy_strike') {
+                    const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+                    const hasMana = this.player.mana >= this.holyStrike.manaCost;
+                    return hpPercent < rule.conditionValue && cooldown <= 0 && hasMana;
+                }
+                return hpPercent < rule.conditionValue;
+            
+            case 'hp_above':
+                if (rule.action === 'holy_strike') {
+                    const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+                    const hasMana = this.player.mana >= this.holyStrike.manaCost;
+                    return hpPercent >= rule.conditionValue && cooldown <= 0 && hasMana;
+                }
+                return hpPercent >= rule.conditionValue;
+            
+            case 'always':
+                if (rule.action === 'holy_strike') {
+                    const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+                    const hasMana = this.player.mana >= this.holyStrike.manaCost;
+                    return cooldown <= 0 && hasMana;
+                }
+                return true;
+            
+            default:
+                return false;
+        }
+    }
+    
+    // Execute the chosen action
+    private executeAction(action: string) {
+        switch (action) {
+            case 'holy_strike':
+                if (this.isSwinging) {
+                    this.cancelMeleeSwing();
+                }
+                this.castInstantSpell(this.holyStrike);
+                break;
+            
+            case 'melee':
+                if (!this.isSwinging) {
+                    this.startMeleeSwing();
+                }
+                break;
+            
+            case 'none':
+                // Do nothing - wait
+                break;
+            
+            default:
+                console.log('Unknown action:', action);
+                break;
+        }
+    }
+    
+    // ========== COMBAT RULES UI SYSTEM ==========
+    private loadCombatRules() {
+        // Try to load from localStorage, otherwise use defaults
+        const savedRules = localStorage.getItem('combatRules');
+        if (savedRules) {
+            this.combatRules = JSON.parse(savedRules);
+        } else {
+            // Default rules
+            this.combatRules = [
+                {
+                    id: 'rule_1',
+                    priority: 1,
+                    conditionType: 'hp_below',
+                    conditionValue: 75,
+                    action: 'holy_strike',
+                    enabled: true
+                },
+                {
+                    id: 'rule_2',
+                    priority: 2,
+                    conditionType: 'always',
+                    conditionValue: 0,
+                    action: 'melee',
+                    enabled: true
+                }
+            ];
+            this.saveCombatRules();
+        }
+    }
+    
+    private saveCombatRules() {
+        localStorage.setItem('combatRules', JSON.stringify(this.combatRules));
+    }
+    
+    private initializeUI() {
+        this.renderRules();
+        
+        // Add event listener for add rule button
+        const addBtn = document.getElementById('add-rule-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => this.addNewRule());
+        }
+    }
+    
+    private renderRules() {
+        const rulesList = document.getElementById('rules-list');
+        if (!rulesList) return;
+        
+        rulesList.innerHTML = '';
+        
+        // Sort by priority
+        const sortedRules = [...this.combatRules].sort((a, b) => a.priority - b.priority);
+        
+        sortedRules.forEach((rule, index) => {
+            const ruleDiv = document.createElement('div');
+            ruleDiv.className = 'ai-rule';
+            
+            // Priority number
+            const priority = document.createElement('span');
+            priority.className = 'rule-priority';
+            priority.textContent = `${rule.priority}.`;
+            ruleDiv.appendChild(priority);
+            
+            // Up/Down controls
+            const controls = document.createElement('div');
+            controls.className = 'rule-controls';
+            
+            if (index > 0) {
+                const upBtn = document.createElement('button');
+                upBtn.textContent = '↑';
+                upBtn.onclick = () => this.moveRule(rule.id, 'up');
+                controls.appendChild(upBtn);
+            }
+            
+            if (index < sortedRules.length - 1) {
+                const downBtn = document.createElement('button');
+                downBtn.textContent = '↓';
+                downBtn.onclick = () => this.moveRule(rule.id, 'down');
+                controls.appendChild(downBtn);
+            }
+            
+            ruleDiv.appendChild(controls);
+            
+            // Rule content
+            const content = document.createElement('div');
+            content.className = 'rule-content';
+            
+            if (rule.conditionType === 'hp_below') {
+                content.innerHTML = `
+                    When HP < 
+                    <input type="number" value="${rule.conditionValue}" 
+                           onchange="window.game.updateRuleValue('${rule.id}', 'conditionValue', this.value)">
+                    % → Use 
+                    <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
+                        <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
+                        <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
+                        <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
+                    </select>
+                `;
+            } else if (rule.conditionType === 'hp_above') {
+                content.innerHTML = `
+                    When HP ≥ 
+                    <input type="number" value="${rule.conditionValue}" 
+                           onchange="window.game.updateRuleValue('${rule.id}', 'conditionValue', this.value)">
+                    % → Use 
+                    <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
+                        <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
+                        <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
+                        <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
+                    </select>
+                `;
+            } else {
+                content.innerHTML = `
+                    Always → Use 
+                    <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
+                        <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
+                        <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
+                        <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
+                    </select>
+                `;
+            }
+            
+            ruleDiv.appendChild(content);
+            
+            // Delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'rule-delete';
+            deleteBtn.textContent = 'X';
+            deleteBtn.onclick = () => this.deleteRule(rule.id);
+            ruleDiv.appendChild(deleteBtn);
+            
+            rulesList.appendChild(ruleDiv);
+        });
+    }
+    
+    public updateRuleValue(ruleId: string, field: string, value: any) {
+        const rule = this.combatRules.find(r => r.id === ruleId);
+        if (rule) {
+            if (field === 'conditionValue') {
+                rule[field] = parseInt(value);
+            } else {
+                rule[field] = value;
+            }
+            this.saveCombatRules();
+            // Re-render to update any dependent UI
+            this.renderRules();
+        }
+    }
+    
+    private moveRule(ruleId: string, direction: 'up' | 'down') {
+        const rule = this.combatRules.find(r => r.id === ruleId);
+        if (!rule) return;
+        
+        const sortedRules = [...this.combatRules].sort((a, b) => a.priority - b.priority);
+        const currentIndex = sortedRules.findIndex(r => r.id === ruleId);
+        
+        if (direction === 'up' && currentIndex > 0) {
+            // Swap priorities with previous rule
+            const prevRule = sortedRules[currentIndex - 1];
+            const tempPriority = rule.priority;
+            rule.priority = prevRule.priority;
+            prevRule.priority = tempPriority;
+        } else if (direction === 'down' && currentIndex < sortedRules.length - 1) {
+            // Swap priorities with next rule
+            const nextRule = sortedRules[currentIndex + 1];
+            const tempPriority = rule.priority;
+            rule.priority = nextRule.priority;
+            nextRule.priority = tempPriority;
+        }
+        
+        this.saveCombatRules();
+        this.renderRules();
+    }
+    
+    private deleteRule(ruleId: string) {
+        this.combatRules = this.combatRules.filter(r => r.id !== ruleId);
+        // Reorder priorities
+        this.combatRules.sort((a, b) => a.priority - b.priority);
+        this.combatRules.forEach((rule, index) => {
+            rule.priority = index + 1;
+        });
+        this.saveCombatRules();
+        this.renderRules();
+    }
+    
+    private addNewRule() {
+        const newId = 'rule_' + Date.now();
+        const newPriority = this.combatRules.length + 1;
+        
+        // Create a simple modal/prompt for condition type
+        const conditionType = prompt('Rule condition type: hp_below, hp_above, or always', 'hp_below');
+        if (!conditionType || !['hp_below', 'hp_above', 'always'].includes(conditionType)) {
+            return; // Cancel if invalid
+        }
+        
+        this.combatRules.push({
+            id: newId,
+            priority: newPriority,
+            conditionType: conditionType,
+            conditionValue: conditionType === 'always' ? 0 : 50,
+            action: 'melee',
+            enabled: true
+        });
+        
+        this.saveCombatRules();
+        this.renderRules();
+    }
+    
+    // Old methods kept for reference (will be removed later)
+    private checkRuleConditions(conditions: any[]): boolean {
+        if (conditions.length === 0) return true;
+        for (const condition of conditions) {
+            if (!this.checkSingleCondition(condition)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    private checkSingleCondition(condition: any): boolean {
+        switch (condition.type) {
+            case 'hp_below_percent':
+                return (this.player.hp / this.player.maxHp * 100) < condition.value;
+            case 'hp_above_percent':
+                return (this.player.hp / this.player.maxHp * 100) >= condition.value;
+            case 'mana_below_percent':
+                return (this.player.mana / this.player.maxMana * 100) < condition.value;
+            case 'mana_above_percent':
+                return (this.player.mana / this.player.maxMana * 100) >= condition.value;
+            case 'cooldown_ready':
+                const cooldown = this.abilityCooldowns.get(condition.ability) || 0;
+                return cooldown <= 0;
+            case 'has_mana':
+                if (condition.ability === 'holy_strike') {
+                    return this.player.mana >= this.holyStrike.manaCost;
+                }
+                return false;
+            case 'enemy_hp_below_percent':
+                return (this.enemy.hp / this.enemy.maxHp * 100) < condition.value;
+            case 'enemy_hp_above_percent':
+                return (this.enemy.hp / this.enemy.maxHp * 100) >= condition.value;
+            default:
+                return false;
         }
     }
     
@@ -312,7 +621,7 @@ export class GameEngine {
         const enemyNextAttack = ((this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
         
         stats.innerHTML = `
-            <div>Player: ${this.player.hp}/${this.player.maxHp} HP | ${this.player.mana}/${this.player.maxMana} Mana | ${playerStatus}${cooldownText}</div>
+            <div>Player: ${this.player.hp}/${this.player.maxHp} HP (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%) | ${this.player.mana}/${this.player.maxMana} Mana | ${playerStatus}${cooldownText}</div>
             <div>Enemy: ${this.enemy.hp}/${this.enemy.maxHp} HP | Next attack: ${enemyNextAttack}s</div>
         `;
     }

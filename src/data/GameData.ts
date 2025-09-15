@@ -122,3 +122,34 @@ export const LOG_TYPES = {
     'heal': { cssClass: 'heal', color: '#51cf66' },
     'mana': { cssClass: 'mana', color: '#339af0' },
 };
+
+// Combat AI Rules - Controls when abilities are used
+export const COMBAT_RULES = [
+    {
+        priority: 1,  // Lower number = higher priority
+        conditions: [
+            { type: 'hp_below_percent', value: 75 },  // HP below 75%
+            { type: 'cooldown_ready', ability: 'holy_strike' },
+            { type: 'has_mana', ability: 'holy_strike' }
+        ],
+        action: 'holy_strike',
+        description: 'Use Holy Strike when below 75% HP'
+    },
+    {
+        priority: 2,
+        conditions: [],  // No conditions = always true
+        action: 'melee',
+        description: 'Default to melee attack'
+    }
+];
+
+// Types for the condition system
+export type ConditionType = 
+    | 'hp_below_percent' 
+    | 'hp_above_percent'
+    | 'mana_below_percent'
+    | 'mana_above_percent'
+    | 'cooldown_ready'
+    | 'has_mana'
+    | 'enemy_hp_below_percent'
+    | 'enemy_hp_above_percent';

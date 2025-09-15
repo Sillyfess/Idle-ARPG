@@ -177,6 +177,101 @@
                 color: #ef5350;
                 text-shadow: 0 0 10px #c62828;
             }
+            
+            /* Combat AI Panel */
+            #combat-ai-panel {
+                background: #2a2a2a;
+                border: 1px solid #444;
+                padding: 15px;
+                margin-top: 20px;
+            }
+            
+            #combat-ai-panel h3 {
+                margin-top: 0;
+                color: #4a9eff;
+            }
+            
+            .ai-rule {
+                background: #1a1a1a;
+                border: 1px solid #333;
+                padding: 10px;
+                margin: 10px 0;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .rule-priority {
+                color: #868e96;
+                font-weight: bold;
+                margin-right: 5px;
+            }
+            
+            .rule-controls {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+            
+            .rule-controls button {
+                background: #333;
+                border: 1px solid #555;
+                color: white;
+                cursor: pointer;
+                padding: 2px 6px;
+                font-size: 10px;
+            }
+            
+            .rule-controls button:hover {
+                background: #444;
+            }
+            
+            .rule-content {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+            
+            .rule-content input {
+                width: 50px;
+                background: #333;
+                border: 1px solid #555;
+                color: white;
+                padding: 2px 5px;
+            }
+            
+            .rule-content select {
+                background: #333;
+                border: 1px solid #555;
+                color: white;
+                padding: 2px 5px;
+            }
+            
+            .rule-delete {
+                background: #8b0000;
+                border: 1px solid #a00;
+                color: white;
+                cursor: pointer;
+                padding: 2px 8px;
+            }
+            
+            .rule-delete:hover {
+                background: #a00;
+            }
+            
+            #add-rule-btn {
+                background: #4a9eff;
+                border: none;
+                color: white;
+                padding: 5px 15px;
+                cursor: pointer;
+                margin-top: 10px;
+            }
+            
+            #add-rule-btn:hover {
+                background: #5ab0ff;
+            }
         </style>
     </head>
     <body>
@@ -212,6 +307,13 @@
                     </div>
                 </div>
             </div>
+        </div>
+        
+        <!-- Combat AI Panel -->
+        <div id="combat-ai-panel">
+            <h3>Combat AI Rules</h3>
+            <div id="rules-list"></div>
+            <button id="add-rule-btn">+ Add Rule</button>
         </div>
         
         <div id="combat-log"></div>

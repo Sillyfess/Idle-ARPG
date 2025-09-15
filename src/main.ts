@@ -8,6 +8,9 @@ import { CONFIG } from './data/GameData';
 // Start the game
 const game = new GameEngine();
 
+// Expose game instance to window for UI interaction
+(window as any).game = game;
+
 // Run game loop
 setInterval(() => {
     game.tick();
