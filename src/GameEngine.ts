@@ -21,6 +21,8 @@ interface Ability {
     castTime: number;
     damage?: number;
     healing?: number;
+    cooldown?: number;
+    healOnDamage?: boolean;
     damageType: 'physical' | 'holy' | 'healing';
     execute: (caster: Character, target: Character) => void;
 }
@@ -45,6 +47,9 @@ export class GameEngine {
     private currentSwingTime: number = 0;
     private enemyAttackTimer: number = 0;
     private globalCooldown: number = 0;
+    
+    // Ability cooldowns (separate from GCD)
+    private abilityCooldowns: Map<string, number> = new Map();
     
     // ========== TIMING ==========
     private lastUpdate: number = Date.now();
@@ -98,6 +103,17 @@ export class GameEngine {
                         holyStrikeData.logMessage(caster.name, holyStrikeData.damage),
                         holyStrikeData.logType
                     );
+                    
+                    // Heal player for damage done if healOnDamage is true
+                    if (holyStrikeData.healOnDamage) {
+                        const healAmount = holyStrikeData.damage;
+                        const oldHp = this.player.hp;
+                        this.player.hp = Math.min(this.player.hp + healAmount, this.player.maxHp);
+                        const actualHeal = this.player.hp - oldHp;
+                        if (actualHeal > 0) {
+                            this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
+                        }
+                    }
                 }
             }
         };
@@ -133,6 +149,16 @@ export class GameEngine {
             this.globalCooldown -= deltaTime;
         }
         
+        // Update ability cooldowns
+        for (const [abilityId, cooldown] of this.abilityCooldowns.entries()) {
+            const newCooldown = cooldown - deltaTime;
+            if (newCooldown <= 0) {
+                this.abilityCooldowns.delete(abilityId);
+            } else {
+                this.abilityCooldowns.set(abilityId, newCooldown);
+            }
+        }
+        
         if (this.isSwinging) {
             this.currentSwingTime -= deltaTime;
             if (this.currentSwingTime <= 0) {
@@ -145,7 +171,11 @@ export class GameEngine {
     private processPlayerAction() {
         if (this.player.hp <= 0 || this.globalCooldown > 0) return;
         
-        if (this.player.mana >= this.holyStrike.manaCost) {
+        // Check if Holy Strike is available (has mana AND not on cooldown)
+        const holyStrikeCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+        const canCastHolyStrike = this.player.mana >= this.holyStrike.manaCost && holyStrikeCooldown <= 0;
+        
+        if (canCastHolyStrike) {
             if (this.isSwinging) {
                 this.cancelMeleeSwing();
             }
@@ -184,6 +214,11 @@ export class GameEngine {
     private castInstantSpell(ability: Ability) {
         this.player.mana -= ability.manaCost;
         this.globalCooldown = CONFIG.GLOBAL_COOLDOWN;
+        
+        // Start ability cooldown if it has one
+        if (ability.cooldown) {
+            this.abilityCooldowns.set(ability.id, ability.cooldown);
+        }
         
         // Visual effects
         this.triggerAttackAnimation('player');
@@ -270,10 +305,14 @@ export class GameEngine {
             playerStatus = `GCD: ${(this.globalCooldown / 1000).toFixed(1)}s`;
         }
         
+        // Show Holy Strike cooldown if active
+        const holyStrikeCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+        const cooldownText = holyStrikeCooldown > 0 ? ` | Holy Strike CD: ${(holyStrikeCooldown / 1000).toFixed(1)}s` : '';
+        
         const enemyNextAttack = ((this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
         
         stats.innerHTML = `
-            <div>Player: ${this.player.hp}/${this.player.maxHp} HP | ${this.player.mana}/${this.player.maxMana} Mana | ${playerStatus}</div>
+            <div>Player: ${this.player.hp}/${this.player.maxHp} HP | ${this.player.mana}/${this.player.maxMana} Mana | ${playerStatus}${cooldownText}</div>
             <div>Enemy: ${this.enemy.hp}/${this.enemy.maxHp} HP | Next attack: ${enemyNextAttack}s</div>
         `;
     }

@@ -40,8 +40,10 @@ export const ABILITIES = {
         manaCost: 25,
         castTime: 0,                  // instant
         damage: 25,
+        cooldown: 6000,                // 6 second cooldown
+        healOnDamage: true,            // heals player for damage done
         damageType: 'holy' as const,
-        description: 'Instantly strike with holy power',
+        description: 'Instantly strike with holy power, healing yourself for damage done',
         logMessage: (caster: string, damage: number) => 
             `${caster} casts Holy Strike for ${damage} damage!`,
         logType: 'player-magic'
