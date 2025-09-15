@@ -23,6 +23,14 @@
             .system { color: #868e96; }
             .melee { color: #ffa726; font-style: italic}
             
+            /* Windfury-specific styling */
+            .windfury {
+                background: linear-gradient(90deg, transparent, rgba(81, 207, 102, 0.1), transparent);
+                border-left: 2px solid #51cf66;
+                padding-left: 8px;
+                margin-left: -8px;
+            }
+            
             /* Combat Arena */
             #combat-arena {
                 display: flex;
@@ -312,6 +320,27 @@
                 border: 2px solid #4a9eff;
                 border-radius: 50%;
                 background: #1a1a1a;
+                transition: transform 0.1s, box-shadow 0.2s;
+                user-select: none;
+            }
+            
+            .ability-icon:hover {
+                transform: scale(1.05);
+                box-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+            }
+            
+            .ability-icon:active {
+                transform: scale(0.95);
+            }
+            
+            .ability-icon.disabled {
+                opacity: 0.5;
+                cursor: not-allowed !important;
+            }
+            
+            .ability-icon.disabled:hover {
+                transform: scale(1);
+                box-shadow: none;
             }
             
             .ability-icon:hover::after {
@@ -395,6 +424,16 @@
             @keyframes aura-pulse {
                 0%, 100% { box-shadow: 0 0 10px #51cf66; }
                 50% { box-shadow: 0 0 20px #51cf66, 0 0 30px #51cf66; }
+            }
+            
+            @keyframes ability-activate {
+                0% { box-shadow: 0 0 0 0 rgba(74, 158, 255, 0.7); }
+                70% { box-shadow: 0 0 0 15px rgba(74, 158, 255, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(74, 158, 255, 0); }
+            }
+            
+            .ability-activate {
+                animation: ability-activate 0.4s;
             }
         </style>
     </head>

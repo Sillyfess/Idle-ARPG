@@ -157,6 +157,39 @@ export class GameEngine {
         }
     }
     
+    // ========== PUBLIC ABILITY METHODS ==========
+    public castHolyStrike() {
+        // Check if we can cast
+        if (this.player.hp <= 0) return;
+        if (this.globalCooldown > 0) return;
+        if (this.player.mana < this.holyStrike.manaCost) {
+            this.log(`Not enough mana! Need ${this.holyStrike.manaCost}, have ${this.player.mana}`, 'system');
+            return;
+        }
+        const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+        if (cooldown > 0) {
+            this.log(`Holy Strike is on cooldown for ${(cooldown / 1000).toFixed(1)}s`, 'system');
+            return;
+        }
+        
+        // Cancel melee swing if in progress
+        if (this.isSwinging) {
+            this.cancelMeleeSwing();
+        }
+        
+        // Flash the ability icon
+        const icons = document.querySelectorAll('.ability-icon');
+        icons.forEach(icon => {
+            if (icon.querySelector('.ability-icon-content')?.textContent === 'H') {
+                icon.classList.add('ability-activate');
+                setTimeout(() => icon.classList.remove('ability-activate'), 400);
+            }
+        });
+        
+        // Cast the spell
+        this.castInstantSpell(this.holyStrike);
+    }
+    
     // ========== AURA MANAGEMENT ==========
     public toggleWindfuryAura() {
         if (this.activeAuras.has('windfury_aura')) {
@@ -350,6 +383,25 @@ export class GameEngine {
         if (addBtn) {
             addBtn.addEventListener('click', () => this.addNewRule());
         }
+        
+        // Add keyboard shortcuts for abilities
+        document.addEventListener('keydown', (e) => {
+            // Prevent shortcuts when typing in inputs
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return;
+            }
+            
+            switch(e.key) {
+                case '1':
+                    e.preventDefault();
+                    this.castHolyStrike();
+                    break;
+                case '2':
+                    e.preventDefault();
+                    this.toggleWindfuryAura();
+                    break;
+            }
+        });
     }
     
     private renderRules() {
@@ -580,7 +632,7 @@ export class GameEngine {
         if (this.activeAuras.has('windfury_aura')) {
             const roll = Math.random();
             if (roll < this.windfuryAura.windfuryChance) {
-                this.log(`Windfury triggers!`, 'system');
+                this.log(`⚡ Windfury triggers on melee attack!`, 'system');
                 
                 // Perform extra attacks
                 for (let i = 0; i < this.windfuryAura.windfuryAttacks; i++) {
@@ -589,7 +641,7 @@ export class GameEngine {
                         this.showDamageNumber(this.player.damage, 'physical', 'enemy');
                         this.enemy.hp -= this.player.damage;
                         this.log(
-                            `Windfury strike for ${this.player.damage} damage!`,
+                            `⚡ Windfury strike for ${this.player.damage} damage!`,
                             'melee'
                         );
                     }, 100 * (i + 1));  // Stagger the extra attacks
@@ -625,15 +677,29 @@ export class GameEngine {
         if (ability.id === 'holy_strike' && this.activeAuras.has('windfury_aura')) {
             const roll = Math.random();
             if (roll < this.windfuryAura.windfuryChance) {
-                this.log(`Windfury triggers on Holy Strike!`, 'system');
+                this.log(`⚡ Windfury triggers on Holy Strike!`, 'system');
                 
                 // Perform extra Holy Strikes
                 for (let i = 0; i < this.windfuryAura.windfuryAttacks; i++) {
                     setTimeout(() => {
                         this.triggerAttackAnimation('player');
                         this.showDamageNumber(ability.damage || 0, ability.damageType, 'enemy');
-                        ability.execute(this.player, this.enemy);
-                        this.log(`Windfury Holy Strike!`, 'player-magic');
+                        
+                        // Manually apply damage and healing instead of calling execute to avoid duplicate logs
+                        if (ability.damage) {
+                            this.enemy.hp -= ability.damage;
+                            this.log(`⚡ Windfury Holy Strike for ${ability.damage} damage!`, 'player-magic');
+                            
+                            // Apply healing if it has healOnDamage
+                            if (ability.healOnDamage) {
+                                const oldHp = this.player.hp;
+                                this.player.hp = Math.min(this.player.hp + ability.damage, this.player.maxHp);
+                                const actualHeal = this.player.hp - oldHp;
+                                if (actualHeal > 0) {
+                                    this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
+                                }
+                            }
+                        }
                     }, 100 * (i + 1));  // Stagger the extra attacks
                 }
             }
@@ -729,28 +795,40 @@ export class GameEngine {
             const isOnCooldown = holyStrikeCooldown > 0;
             const windfuryActive = this.activeAuras.has('windfury_aura');
             
+            // Check if Holy Strike can be cast
+            const holyStrikeMana = this.player.mana >= this.holyStrike.manaCost;
+            const canCastHolyStrike = holyStrikeMana && !isOnCooldown && this.globalCooldown <= 0 && this.player.hp > 0;
+            
             let holyStrikeIcon = '';
-            const holyStrikeTooltip = `Holy Strike&#10;Mana Cost: 25&#10;Cooldown: 6s&#10;Damage: 25 holy&#10;Heals you for damage dealt${windfuryActive ? '&#10;Can trigger Windfury!' : ''}`;
+            const holyStrikeTooltip = `Holy Strike [1]&#10;Mana Cost: 25&#10;Cooldown: 6s&#10;Damage: 25 holy&#10;Heals you for damage dealt${windfuryActive ? '&#10;Can trigger Windfury!' : ''}&#10;&#10;Click or press 1 to cast`;
             
             if (isOnCooldown) {
                 holyStrikeIcon = `
-                    <div class="ability-icon" data-tooltip="${holyStrikeTooltip}">
+                    <div class="ability-icon${!canCastHolyStrike ? ' disabled' : ''}" 
+                         data-tooltip="${holyStrikeTooltip}"
+                         onclick="window.game.castHolyStrike()"
+                         style="cursor: ${canCastHolyStrike ? 'pointer' : 'not-allowed'};">
                         <div class="ability-icon-content">H</div>
                         <div class="cooldown-overlay"></div>
                         <div class="cooldown-sweep" style="background: conic-gradient(transparent ${cooldownPercent}%, rgba(255, 255, 255, 0.3) ${cooldownPercent}%);"></div>
                         <div class="cooldown-text">${(holyStrikeCooldown / 1000).toFixed(1)}</div>
+                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">1</div>
                     </div>
                 `;
             } else {
                 holyStrikeIcon = `
-                    <div class="ability-icon ability-ready" data-tooltip="${holyStrikeTooltip}">
-                        <div class="ability-icon-content">H</div>
+                    <div class="ability-icon${canCastHolyStrike ? ' ability-ready' : ' disabled'}" 
+                         data-tooltip="${holyStrikeTooltip}"
+                         onclick="window.game.castHolyStrike()"
+                         style="cursor: ${canCastHolyStrike ? 'pointer' : 'not-allowed'};">
+                        <div class="ability-icon-content"${!holyStrikeMana ? ' style="color: #666;"' : ''}>H</div>
+                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">1</div>
                     </div>
                 `;
             }
             
             // Windfury Aura toggle
-            const windfuryTooltip = `Windfury Aura&#10;Reserves: 50% of max mana&#10;Effect: 20% chance for 2 extra attacks&#10;Works on melee AND Holy Strike!&#10;${windfuryActive ? 'ACTIVE - Click to deactivate' : 'Click to activate'}`;
+            const windfuryTooltip = `Windfury Aura [2]&#10;Reserves: 50% of max mana&#10;Effect: 20% chance for 2 extra attacks&#10;Works on melee AND Holy Strike!&#10;${windfuryActive ? 'ACTIVE - Click or press 2 to deactivate' : 'Click or press 2 to activate'}`;
             
             const windfuryIcon = windfuryActive ? `
                 <div class="ability-icon aura-active" 
@@ -759,6 +837,7 @@ export class GameEngine {
                      data-tooltip="${windfuryTooltip}">
                     <div class="ability-icon-content" style="color: #51cf66;">W</div>
                     <div class="aura-indicator" style="position: absolute; top: -5px; right: -5px; width: 10px; height: 10px; background: #51cf66; border-radius: 50%; box-shadow: 0 0 5px #51cf66;"></div>
+                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">2</div>
                 </div>
             ` : `
                 <div class="ability-icon" 
@@ -766,6 +845,7 @@ export class GameEngine {
                      style="cursor: pointer;" 
                      data-tooltip="${windfuryTooltip}">
                     <div class="ability-icon-content">W</div>
+                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">2</div>
                 </div>
             `;
             
@@ -839,7 +919,12 @@ export class GameEngine {
         if (!logElement) return;
         
         logElement.innerHTML = this.combatLog
-            .map(entry => `<div class="${entry.type}">${entry.message}</div>`)
+            .map(entry => {
+                // Add windfury class to messages containing the lightning emoji
+                const isWindfury = entry.message.includes('⚡');
+                const classes = isWindfury ? `${entry.type} windfury` : entry.type;
+                return `<div class="${classes}">${entry.message}</div>`;
+            })
             .join('');
     }
     
