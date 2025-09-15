@@ -16,6 +16,7 @@ interface Character {
     damage: number;
     baseDamage: number;  // Base damage before equipment
     armor: number;  // Flat damage reduction
+    gold: number;  // Currency
 }
 
 interface Summon {
@@ -33,11 +34,16 @@ interface Summon {
 interface Item {
     id: string;
     name: string;
-    slot: 'weapon' | 'armor';
+    slot: 'weapon' | 'armor' | 'consumable';
     damage?: number;
     armor?: number;
     manaRegen?: number;
+    healing?: number;  // For health potions
+    manaRestore?: number;  // For mana potions
     equipped: boolean;
+    sellValue: number;  // Gold value when sold
+    stackable?: boolean;  // For potions
+    quantity?: number;  // Stack size
 }
 
 interface Ability {
@@ -114,6 +120,7 @@ export class GameEngine {
     private inventory: Item[] = [];
     private readonly maxInventorySize = 20;
     private inventoryOpen = false;
+    private shopOpen = false;
     
     // ========== INITIALIZATION ==========
     constructor() {
@@ -197,7 +204,8 @@ export class GameEngine {
                 name: 'Rusty Sword',
                 slot: 'weapon',
                 damage: 2,
-                equipped: false
+                equipped: false,
+                sellValue: 10  // Weapon sell value
             };
         } else {
             return {
@@ -206,7 +214,8 @@ export class GameEngine {
                 slot: 'armor',
                 armor: 2,
                 manaRegen: 1,
-                equipped: false
+                equipped: false,
+                sellValue: 15  // Armor sell value (more because 2 stats)
             };
         }
     }
@@ -222,6 +231,188 @@ export class GameEngine {
         this.updateInventoryUI();
     }
     
+    public sellItem(itemId: string) {
+        const itemIndex = this.inventory.findIndex(i => i.id === itemId);
+        if (itemIndex === -1) return;
+        
+        const item = this.inventory[itemIndex];
+        
+        // Can't sell equipped items
+        if (item.equipped) {
+            this.log(`Cannot sell equipped items! Unequip ${item.name} first.`, 'system');
+            return;
+        }
+        
+        // Add gold
+        this.player.gold += item.sellValue;
+        
+        // Remove from inventory
+        this.inventory.splice(itemIndex, 1);
+        
+        this.log(`Sold ${item.name} for ${item.sellValue} gold!`, 'loot');
+        this.updateInventoryUI();
+    }
+    
+    public usePotion(itemId: string) {
+        const item = this.inventory.find(i => i.id === itemId);
+        if (!item || item.slot !== 'consumable') return;
+        
+        let used = false;
+        
+        if (item.healing && this.player.hp < this.player.maxHp) {
+            const oldHp = this.player.hp;
+            this.player.hp = Math.min(this.player.hp + item.healing, this.player.maxHp);
+            const healed = this.player.hp - oldHp;
+            this.log(`Used ${item.name}, restored ${healed} HP!`, 'heal');
+            used = true;
+        } else if (item.manaRestore && this.player.mana < this.player.maxMana) {
+            const oldMana = this.player.mana;
+            this.player.mana = Math.min(this.player.mana + item.manaRestore, this.player.maxMana);
+            const restored = this.player.mana - oldMana;
+            this.log(`Used ${item.name}, restored ${restored} mana!`, 'mana');
+            used = true;
+        } else {
+            this.log(`Cannot use ${item.name} - already at full ${item.healing ? 'health' : 'mana'}!`, 'system');
+            return;
+        }
+        
+        if (used) {
+            // Reduce quantity or remove item
+            if (item.quantity && item.quantity > 1) {
+                item.quantity--;
+            } else {
+                const index = this.inventory.indexOf(item);
+                this.inventory.splice(index, 1);
+            }
+            this.updateInventoryUI();
+        }
+    }
+    
+    public buyFromShop(itemType: string) {
+        let item: Item | null = null;
+        let cost = 0;
+        
+        switch(itemType) {
+            case 'weapon':
+                if (this.inventory.length >= this.maxInventorySize) {
+                    this.log(`Inventory full! Cannot buy items.`, 'system');
+                    return;
+                }
+                cost = 25;
+                if (this.player.gold < cost) {
+                    this.log(`Not enough gold! Need ${cost} gold.`, 'system');
+                    return;
+                }
+                item = {
+                    id: 'item_' + Date.now(),
+                    name: 'Rusty Sword',
+                    slot: 'weapon',
+                    damage: 2,
+                    equipped: false,
+                    sellValue: 10
+                };
+                break;
+            case 'armor':
+                if (this.inventory.length >= this.maxInventorySize) {
+                    this.log(`Inventory full! Cannot buy items.`, 'system');
+                    return;
+                }
+                cost = 35;
+                if (this.player.gold < cost) {
+                    this.log(`Not enough gold! Need ${cost} gold.`, 'system');
+                    return;
+                }
+                item = {
+                    id: 'item_' + Date.now(),
+                    name: 'Leather Armor',
+                    slot: 'armor',
+                    armor: 2,
+                    manaRegen: 1,
+                    equipped: false,
+                    sellValue: 15
+                };
+                break;
+            case 'health_potion':
+                cost = 20;
+                if (this.player.gold < cost) {
+                    this.log(`Not enough gold! Need ${cost} gold.`, 'system');
+                    return;
+                }
+                
+                // Check if we already have health potions and stack them
+                const existingHealthPotion = this.inventory.find(i => i.name === 'Health Potion');
+                if (existingHealthPotion && existingHealthPotion.quantity) {
+                    existingHealthPotion.quantity++;
+                    this.player.gold -= cost;
+                    this.log(`Bought Health Potion for ${cost} gold! (Stack: ${existingHealthPotion.quantity})`, 'loot');
+                    this.updateInventoryUI();
+                    this.updateShopUI();
+                    return;
+                }
+                
+                // Only check inventory space if we're adding a new item
+                if (this.inventory.length >= this.maxInventorySize) {
+                    this.log(`Inventory full! Cannot buy items.`, 'system');
+                    return;
+                }
+                
+                item = {
+                    id: 'item_' + Date.now(),
+                    name: 'Health Potion',
+                    slot: 'consumable',
+                    healing: 75,
+                    equipped: false,
+                    sellValue: 5,
+                    stackable: true,
+                    quantity: 1
+                };
+                break;
+            case 'mana_potion':
+                cost = 10;
+                if (this.player.gold < cost) {
+                    this.log(`Not enough gold! Need ${cost} gold.`, 'system');
+                    return;
+                }
+                
+                // Check if we already have mana potions and stack them
+                const existingManaPotion = this.inventory.find(i => i.name === 'Mana Potion');
+                if (existingManaPotion && existingManaPotion.quantity) {
+                    existingManaPotion.quantity++;
+                    this.player.gold -= cost;
+                    this.log(`Bought Mana Potion for ${cost} gold! (Stack: ${existingManaPotion.quantity})`, 'loot');
+                    this.updateInventoryUI();
+                    this.updateShopUI();
+                    return;
+                }
+                
+                // Only check inventory space if we're adding a new item
+                if (this.inventory.length >= this.maxInventorySize) {
+                    this.log(`Inventory full! Cannot buy items.`, 'system');
+                    return;
+                }
+                
+                item = {
+                    id: 'item_' + Date.now(),
+                    name: 'Mana Potion',
+                    slot: 'consumable',
+                    manaRestore: 100,
+                    equipped: false,
+                    sellValue: 3,
+                    stackable: true,
+                    quantity: 1
+                };
+                break;
+        }
+        
+        if (item) {
+            this.player.gold -= cost;
+            this.inventory.push(item);
+            this.log(`Bought ${item.name} for ${cost} gold!`, 'loot');
+            this.updateInventoryUI();
+            this.updateShopUI();
+        }
+    }
+    
     private createPlayer(): Character {
         return {
             name: "Cleric",
@@ -234,7 +425,8 @@ export class GameEngine {
             baseManaRegen: PLAYER_CONFIG.BASE_MANA_REGEN,
             damage: PLAYER_CONFIG.MELEE_DAMAGE,
             baseDamage: PLAYER_CONFIG.MELEE_DAMAGE,
-            armor: 0
+            armor: 0,
+            gold: 10  // Start with 10 gold
         };
     }
     
@@ -250,7 +442,8 @@ export class GameEngine {
             baseManaRegen: 0,
             damage: enemyType.damage,
             baseDamage: enemyType.damage,
-            armor: 0
+            armor: 0,
+            gold: 0
         };
     }
     
@@ -723,6 +916,7 @@ export class GameEngine {
     private initializeUI() {
         this.renderRules();
         this.createInventoryUI();
+        this.createShopUI();
         
         // Add event listener for add rule button
         const addBtn = document.getElementById('add-rule-btn');
@@ -755,8 +949,165 @@ export class GameEngine {
                     e.preventDefault();
                     this.toggleInventory();
                     break;
+                case 's':
+                case 'S':
+                    e.preventDefault();
+                    this.toggleShop();
+                    break;
             }
         });
+    }
+    
+    // ========== SHOP UI ==========
+    private createShopUI() {
+        // Create shop button
+        const shopBtn = document.createElement('button');
+        shopBtn.id = 'shop-button';
+        shopBtn.innerHTML = `Shop [S]`;
+        shopBtn.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: calc(50% - 280px);
+            padding: 8px 15px;
+            background: #2a2a2a;
+            border: 2px solid #444;
+            color: #d4d4d8;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 100;
+        `;
+        shopBtn.onclick = () => this.toggleShop();
+        
+        // Create shop panel (hidden by default)
+        const shopPanel = document.createElement('div');
+        shopPanel.id = 'shop-panel';
+        shopPanel.style.cssText = `
+            position: absolute;
+            top: 50px;
+            right: calc(50% - 280px);
+            width: 300px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            padding: 10px;
+            display: none;
+            z-index: 100;
+        `;
+        
+        document.body.appendChild(shopBtn);
+        document.body.appendChild(shopPanel);
+        
+        this.updateShopUI();
+    }
+    
+    public toggleShop() {
+        this.shopOpen = !this.shopOpen;
+        const panel = document.getElementById('shop-panel');
+        if (panel) {
+            panel.style.display = this.shopOpen ? 'block' : 'none';
+        }
+        // Close inventory if shop opens
+        if (this.shopOpen && this.inventoryOpen) {
+            this.toggleInventory();
+        }
+        if (this.shopOpen) {
+            this.updateShopUI();
+        }
+    }
+    
+    private updateShopUI() {
+        const panel = document.getElementById('shop-panel');
+        if (!panel) return;
+        
+        let html = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="color: #d4d4d8; margin: 0;">Shop</h3>
+            <div style="color: #ffd93d; font-weight: bold;">Gold: ${this.player.gold}</div>
+        </div>`;
+        
+        html += '<div style="border-top: 1px solid #444; padding-top: 10px;">';
+        
+        // Weapon
+        html += `
+            <div style="padding: 8px; border: 1px solid #333; margin-bottom: 5px; background: #222;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #d4d4d8; font-weight: bold;">Rusty Sword</div>
+                        <div style="color: #888; font-size: 12px;">+2 damage</div>
+                    </div>
+                    <button onclick="window.game.buyFromShop('weapon')" 
+                            style="padding: 4px 10px; background: ${this.player.gold >= 25 ? '#4a3a00' : '#333'}; 
+                                   border: 1px solid ${this.player.gold >= 25 ? '#ffd93d' : '#666'}; 
+                                   color: ${this.player.gold >= 25 ? '#ffd93d' : '#666'}; 
+                                   cursor: ${this.player.gold >= 25 ? 'pointer' : 'not-allowed'};">
+                        Buy (25g)
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Armor
+        html += `
+            <div style="padding: 8px; border: 1px solid #333; margin-bottom: 5px; background: #222;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #d4d4d8; font-weight: bold;">Leather Armor</div>
+                        <div style="color: #888; font-size: 12px;">+2 armor, +1 mana/s</div>
+                    </div>
+                    <button onclick="window.game.buyFromShop('armor')" 
+                            style="padding: 4px 10px; background: ${this.player.gold >= 35 ? '#4a3a00' : '#333'}; 
+                                   border: 1px solid ${this.player.gold >= 35 ? '#ffd93d' : '#666'}; 
+                                   color: ${this.player.gold >= 35 ? '#ffd93d' : '#666'}; 
+                                   cursor: ${this.player.gold >= 35 ? 'pointer' : 'not-allowed'};">
+                        Buy (35g)
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Divider for potions
+        html += '<div style="color: #888; margin: 10px 0; text-align: center;">— Consumables —</div>';
+        
+        // Health Potion
+        html += `
+            <div style="padding: 8px; border: 1px solid #333; margin-bottom: 5px; background: #222;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #ff6b6b; font-weight: bold;">Health Potion</div>
+                        <div style="color: #888; font-size: 12px;">Restores 75 HP</div>
+                    </div>
+                    <button onclick="window.game.buyFromShop('health_potion')" 
+                            style="padding: 4px 10px; background: ${this.player.gold >= 20 ? '#4a3a00' : '#333'}; 
+                                   border: 1px solid ${this.player.gold >= 20 ? '#ffd93d' : '#666'}; 
+                                   color: ${this.player.gold >= 20 ? '#ffd93d' : '#666'}; 
+                                   cursor: ${this.player.gold >= 20 ? 'pointer' : 'not-allowed'};">
+                        Buy (20g)
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Mana Potion
+        html += `
+            <div style="padding: 8px; border: 1px solid #333; margin-bottom: 5px; background: #222;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #339af0; font-weight: bold;">Mana Potion</div>
+                        <div style="color: #888; font-size: 12px;">Restores 100 mana</div>
+                    </div>
+                    <button onclick="window.game.buyFromShop('mana_potion')" 
+                            style="padding: 4px 10px; background: ${this.player.gold >= 10 ? '#4a3a00' : '#333'}; 
+                                   border: 1px solid ${this.player.gold >= 10 ? '#ffd93d' : '#666'}; 
+                                   color: ${this.player.gold >= 10 ? '#ffd93d' : '#666'}; 
+                                   cursor: ${this.player.gold >= 10 ? 'pointer' : 'not-allowed'};">
+                        Buy (10g)
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        html += '</div>';
+        
+        panel.innerHTML = html;
     }
     
     // ========== INVENTORY UI ==========
@@ -817,6 +1168,10 @@ export class GameEngine {
         if (panel) {
             panel.style.display = this.inventoryOpen ? 'block' : 'none';
         }
+        // Close shop if inventory opens
+        if (this.inventoryOpen && this.shopOpen) {
+            this.toggleShop();
+        }
         if (this.inventoryOpen) {
             this.updateInventoryUI();
         }
@@ -832,7 +1187,10 @@ export class GameEngine {
         
         if (!panel) return;
         
-        let html = '<h3 style="color: #d4d4d8; margin: 0 0 10px 0;">Equipment</h3>';
+        let html = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="color: #d4d4d8; margin: 0;">Equipment</h3>
+            <div style="color: #ffd93d; font-weight: bold;">Gold: ${this.player.gold}</div>
+        </div>`;
         
         // Show equipped items
         const weapon = this.equipment.get('weapon');
@@ -840,14 +1198,14 @@ export class GameEngine {
         
         html += '<div style="margin-bottom: 15px;">';
         html += `<div style="padding: 5px; border: 1px solid #333; margin-bottom: 5px;">`;
-        html += `<strong>Weapon:</strong> ${weapon ? `${weapon.name} (+${weapon.damage} damage)` : 'Empty'}`;
+        html += `<strong>Weapon:</strong> ${weapon ? `${weapon.name} (+${weapon.damage} damage) [Value: ${weapon.sellValue}g]` : 'Empty'}`;
         if (weapon) {
             html += ` <button onclick="window.game.unequipItem('weapon')" style="margin-left: 10px; padding: 2px 8px; background: #444; border: 1px solid #666; color: #d4d4d8; cursor: pointer;">Unequip</button>`;
         }
         html += '</div>';
         
         html += `<div style="padding: 5px; border: 1px solid #333;">`;
-        html += `<strong>Armor:</strong> ${armor ? `${armor.name} (+${armor.armor} armor, +${armor.manaRegen} mana/s)` : 'Empty'}`;
+        html += `<strong>Armor:</strong> ${armor ? `${armor.name} (+${armor.armor} armor, +${armor.manaRegen} mana/s) [Value: ${armor.sellValue}g]` : 'Empty'}`;
         if (armor) {
             html += ` <button onclick="window.game.unequipItem('armor')" style="margin-left: 10px; padding: 2px 8px; background: #444; border: 1px solid #666; color: #d4d4d8; cursor: pointer;">Unequip</button>`;
         }
@@ -869,12 +1227,39 @@ export class GameEngine {
                 if (item.damage) itemStats += `+${item.damage} dmg`;
                 if (item.armor) itemStats += `+${item.armor} armor`;
                 if (item.manaRegen) itemStats += ` +${item.manaRegen} mana/s`;
+                if (item.healing) itemStats += `Restores ${item.healing} HP`;
+                if (item.manaRestore) itemStats += `Restores ${item.manaRestore} mana`;
+                
+                // Add quantity for stackable items
+                const itemName = item.quantity && item.quantity > 1 ? `${item.name} (${item.quantity})` : item.name;
+                
+                // Color code potions
+                let nameColor = '#d4d4d8';
+                if (item.name === 'Health Potion') nameColor = '#ff6b6b';
+                if (item.name === 'Mana Potion') nameColor = '#339af0';
                 
                 html += `
                     <div style="padding: 5px; border: 1px solid #333; background: #222;">
-                        <div style="color: #d4d4d8; font-weight: bold;">${item.name}</div>
+                        <div style="color: ${nameColor}; font-weight: bold;">${itemName}</div>
                         <div style="color: #888; font-size: 12px;">${item.slot} - ${itemStats}</div>
-                        <button onclick="window.game.equipItem('${item.id}')" style="margin-top: 5px; padding: 2px 8px; background: #2a4a2a; border: 1px solid #51cf66; color: #51cf66; cursor: pointer; width: 100%;">Equip</button>
+                        <div style="color: #ffd93d; font-size: 12px;">Sell: ${item.sellValue} gold</div>
+                        <div style="display: flex; gap: 5px; margin-top: 5px;">
+                `;
+                
+                if (item.slot === 'consumable') {
+                    html += `
+                        <button onclick="window.game.usePotion('${item.id}')" style="padding: 2px 8px; background: #2a3a4a; border: 1px solid #4a9eff; color: #4a9eff; cursor: pointer; flex: 1;">Use</button>
+                        <button onclick="window.game.sellItem('${item.id}')" style="padding: 2px 8px; background: #4a3a00; border: 1px solid #ffd93d; color: #ffd93d; cursor: pointer; flex: 1;">Sell</button>
+                    `;
+                } else {
+                    html += `
+                        <button onclick="window.game.equipItem('${item.id}')" style="padding: 2px 8px; background: #2a4a2a; border: 1px solid #51cf66; color: #51cf66; cursor: pointer; flex: 1;">Equip</button>
+                        <button onclick="window.game.sellItem('${item.id}')" style="padding: 2px 8px; background: #4a3a00; border: 1px solid #ffd93d; color: #ffd93d; cursor: pointer; flex: 1;">Sell</button>
+                    `;
+                }
+                
+                html += `
+                        </div>
                     </div>
                 `;
             });
@@ -1264,6 +1649,20 @@ export class GameEngine {
         if (this.enemy.hp <= 0) {
             this.log(`${this.enemy.name} defeated!`, 'system');
             
+            // Gold drop (2-5 gold per enemy, small chance for bonus)
+            let goldDrop = Math.floor(Math.random() * 4) + 2;
+            
+            // 10% chance for bonus gold
+            if (Math.random() < 0.1) {
+                const bonus = Math.floor(Math.random() * 10) + 5; // 5-14 bonus
+                goldDrop += bonus;
+                this.log(`Found ${goldDrop} gold! (Bonus gold!)`, 'loot');
+            } else {
+                this.log(`Found ${goldDrop} gold!`, 'loot');
+            }
+            
+            this.player.gold += goldDrop;
+            
             // Check for item drop
             const drop = this.generateItemDrop();
             if (drop) {
@@ -1277,6 +1676,11 @@ export class GameEngine {
         
         if (this.player.hp <= 0) {
             this.log(`${this.player.name} has been defeated!`, 'damage');
+            const goldLost = Math.floor(this.player.gold * 0.1); // Lose 10% of gold on death
+            if (goldLost > 0) {
+                this.player.gold -= goldLost;
+                this.log(`Lost ${goldLost} gold!`, 'system');
+            }
             this.player.hp = this.player.maxHp;
             // Respect mana reservation when respawning
             if (this.activeAuras.has('windfury_aura')) {
@@ -1440,6 +1844,7 @@ export class GameEngine {
             
             playerStats.innerHTML = `
                 <div><strong>Cleric</strong></div>
+                <div style="color: #ffd93d; font-weight: bold;">Gold: ${this.player.gold}</div>
                 <div>HP: ${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</div>
                 <div>Mana: ${this.player.mana}/${this.player.maxMana}${manaReservedText} (Regen: ${this.player.manaRegen}/s)</div>
                 <div>Damage: ${playerMinDamage}-${playerMaxDamage}</div>
