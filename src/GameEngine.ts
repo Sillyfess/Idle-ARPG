@@ -33,11 +33,12 @@ interface Ability {
     manaCost: number;
     castTime: number;
     damage?: number;
+    damageMultiplier?: number;
     healing?: number;
     cooldown?: number;
     healOnDamage?: boolean;
-    damageType: 'physical' | 'holy' | 'healing';
-    execute: (caster: Character, target: Character) => void;
+    damageType: 'physical' | 'holy' | 'healing' | 'summon';
+    execute: (caster: Character, target: Character, baseDamage?: number) => number | void;
 }
 
 interface CombatLogEntry {
@@ -101,6 +102,12 @@ export class GameEngine {
         this.initializeUI();
     }
     
+    // ========== DAMAGE CALCULATIONS ==========
+    private calculateDamageWithVariance(baseDamage: number): number {
+        const variance = Math.random() * (CONFIG.DAMAGE_VARIANCE_MAX - CONFIG.DAMAGE_VARIANCE_MIN) + CONFIG.DAMAGE_VARIANCE_MIN;
+        return Math.round(baseDamage * variance);
+    }
+    
     private createPlayer(): Character {
         return {
             name: "Cleric",
@@ -136,29 +143,35 @@ export class GameEngine {
         const holyStrikeData = ABILITIES.holyStrike;
         this.holyStrike = {
             ...holyStrikeData,
-            execute: (caster, target) => {
-                if (holyStrikeData.damage) {
-                    target.hp -= holyStrikeData.damage;
-                    this.log(
-                        holyStrikeData.logMessage(caster.name, holyStrikeData.damage),
-                        holyStrikeData.logType
-                    );
-                    
-                    // Heal player for damage done if healOnDamage is true
-                    if (holyStrikeData.healOnDamage) {
-                        const healAmount = holyStrikeData.damage;
-                        const oldHp = this.player.hp;
-                        this.player.hp = Math.min(this.player.hp + healAmount, this.player.maxHp);
-                        const actualHeal = this.player.hp - oldHp;
-                        if (actualHeal > 0) {
-                            // Show heal splat on player after a slight delay
-                            setTimeout(() => {
-                                this.showDamageNumber(actualHeal, 'healing', 'player');
-                            }, 100);
-                            this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
-                        }
+            execute: (caster, target, baseDamage?: number) => {
+                // Calculate damage based on multiplier
+                // If baseDamage is provided (from melee calculation), use it
+                // Otherwise calculate fresh with variance
+                const meleeDamage = baseDamage || this.calculateDamageWithVariance(this.player.damage);
+                const holyDamage = Math.round(meleeDamage * holyStrikeData.damageMultiplier);
+                
+                target.hp -= holyDamage;
+                this.log(
+                    holyStrikeData.logMessage(caster.name, holyDamage),
+                    holyStrikeData.logType
+                );
+                
+                // Heal player for damage done if healOnDamage is true
+                if (holyStrikeData.healOnDamage) {
+                    const healAmount = holyDamage;
+                    const oldHp = this.player.hp;
+                    this.player.hp = Math.min(this.player.hp + healAmount, this.player.maxHp);
+                    const actualHeal = this.player.hp - oldHp;
+                    if (actualHeal > 0) {
+                        // Show heal splat on player after a slight delay
+                        setTimeout(() => {
+                            this.showDamageNumber(actualHeal, 'healing', 'player');
+                        }, 100);
+                        this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
                     }
                 }
+                
+                return holyDamage; // Return the damage for use in other calculations
             }
         };
         
@@ -259,12 +272,13 @@ export class GameEngine {
         this.player.mana -= this.summonSkeleton.manaCost;
         this.globalCooldown = CONFIG.GLOBAL_COOLDOWN;
         
-        // Create the summon using skeleton enemy stats
+        // Create the summon with damage based on player's melee damage
+        const summonBaseDamage = Math.round(this.player.damage * this.summonSkeleton.summonDamageMultiplier);
         const newSummon: Summon = {
             name: 'Skeleton Minion',
             hp: ENEMIES.skeleton.hp,
             maxHp: ENEMIES.skeleton.hp,
-            damage: ENEMIES.skeleton.damage,
+            damage: summonBaseDamage,  // 75% of player damage
             attackSpeed: ENEMIES.skeleton.attackSpeed,
             attackTimer: 0,
             timeRemaining: this.summonSkeleton.duration,
@@ -402,12 +416,15 @@ export class GameEngine {
             summon.attackTimer += deltaTime;
             
             if (summon.attackTimer >= summon.attackSpeed) {
+                // Calculate damage with variance
+                const damage = this.calculateDamageWithVariance(summon.damage);
+                
                 // Summon attacks the enemy
                 this.triggerAttackAnimation('summon');
-                this.showDamageNumber(summon.damage, 'physical', 'enemy');
+                this.showDamageNumber(damage, 'physical', 'enemy');
                 
-                this.enemy.hp -= summon.damage;
-                this.log(`${summon.name} claws for ${summon.damage} damage!`, 'melee');
+                this.enemy.hp -= damage;
+                this.log(`${summon.name} claws for ${damage} damage!`, 'melee');
                 
                 summon.attackTimer = 0;
             }
@@ -833,13 +850,16 @@ export class GameEngine {
     private completeMeleeSwing() {
         this.isSwinging = false;
         
+        // Calculate damage with variance
+        const damage = this.calculateDamageWithVariance(this.player.damage);
+        
         // Visual effects
         this.triggerAttackAnimation('player');
-        this.showDamageNumber(this.player.damage, 'physical', 'enemy');
+        this.showDamageNumber(damage, 'physical', 'enemy');
         
-        this.enemy.hp -= this.player.damage;
+        this.enemy.hp -= damage;
         this.log(
-            `${this.player.name} strikes with their mace for ${this.player.damage} damage!`,
+            `${this.player.name} strikes with their mace for ${damage} damage!`,
             'melee'
         );
         
@@ -849,14 +869,15 @@ export class GameEngine {
             if (roll < this.windfuryAura.windfuryChance) {
                 this.log(`⚡ Windfury triggers on melee attack!`, 'system');
                 
-                // Perform extra attacks
+                // Perform extra attacks with variance
                 for (let i = 0; i < this.windfuryAura.windfuryAttacks; i++) {
                     setTimeout(() => {
+                        const windfuryDamage = this.calculateDamageWithVariance(this.player.damage);
                         this.triggerAttackAnimation('player');
-                        this.showDamageNumber(this.player.damage, 'physical', 'enemy');
-                        this.enemy.hp -= this.player.damage;
+                        this.showDamageNumber(windfuryDamage, 'physical', 'enemy');
+                        this.enemy.hp -= windfuryDamage;
                         this.log(
-                            `⚡ Windfury strike for ${this.player.damage} damage!`,
+                            `⚡ Windfury strike for ${windfuryDamage} damage!`,
                             'melee'
                         );
                     }, 100 * (i + 1));  // Stagger the extra attacks
@@ -880,13 +901,17 @@ export class GameEngine {
             this.abilityCooldowns.set(ability.id, ability.cooldown);
         }
         
+        // Calculate base melee damage for abilities that scale off it
+        const baseMeleeDamage = this.calculateDamageWithVariance(this.player.damage);
+        
+        // Execute the ability and get the damage dealt
+        const damageDealt = ability.execute(this.player, this.enemy, baseMeleeDamage);
+        
         // Visual effects
         this.triggerAttackAnimation('player');
-        if (ability.damage) {
-            this.showDamageNumber(ability.damage, ability.damageType, 'enemy');
+        if (damageDealt && typeof damageDealt === 'number') {
+            this.showDamageNumber(damageDealt, ability.damageType, 'enemy');
         }
-        
-        ability.execute(this.player, this.enemy);
         
         // Check for Windfury proc on Holy Strike (it's still a melee attack)
         if (ability.id === 'holy_strike' && this.activeAuras.has('windfury_aura')) {
@@ -894,29 +919,31 @@ export class GameEngine {
             if (roll < this.windfuryAura.windfuryChance) {
                 this.log(`⚡ Windfury triggers on Holy Strike!`, 'system');
                 
-                // Perform extra Holy Strikes
+                // Perform extra Holy Strikes with new damage rolls
                 for (let i = 0; i < this.windfuryAura.windfuryAttacks; i++) {
                     setTimeout(() => {
-                        this.triggerAttackAnimation('player');
-                        this.showDamageNumber(ability.damage || 0, ability.damageType, 'enemy');
+                        // Calculate new damage for each Windfury proc
+                        const windfuryMeleeDamage = this.calculateDamageWithVariance(this.player.damage);
+                        const windfuryHolyDamage = Math.round(windfuryMeleeDamage * ABILITIES.holyStrike.damageMultiplier);
                         
-                        // Manually apply damage and healing instead of calling execute to avoid duplicate logs
-                        if (ability.damage) {
-                            this.enemy.hp -= ability.damage;
-                            this.log(`⚡ Windfury Holy Strike for ${ability.damage} damage!`, 'player-magic');
-                            
-                            // Apply healing if it has healOnDamage
-                            if (ability.healOnDamage) {
-                                const oldHp = this.player.hp;
-                                this.player.hp = Math.min(this.player.hp + ability.damage, this.player.maxHp);
-                                const actualHeal = this.player.hp - oldHp;
-                                if (actualHeal > 0) {
-                                    // Show heal splat on player after a slight delay
-                                    setTimeout(() => {
-                                        this.showDamageNumber(actualHeal, 'healing', 'player');
-                                    }, 150);
-                                    this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
-                                }
+                        this.triggerAttackAnimation('player');
+                        this.showDamageNumber(windfuryHolyDamage, ability.damageType, 'enemy');
+                        
+                        // Apply damage
+                        this.enemy.hp -= windfuryHolyDamage;
+                        this.log(`⚡ Windfury Holy Strike for ${windfuryHolyDamage} damage!`, 'player-magic');
+                        
+                        // Apply healing if it has healOnDamage
+                        if (ability.healOnDamage) {
+                            const oldHp = this.player.hp;
+                            this.player.hp = Math.min(this.player.hp + windfuryHolyDamage, this.player.maxHp);
+                            const actualHeal = this.player.hp - oldHp;
+                            if (actualHeal > 0) {
+                                // Show heal splat on player after a slight delay
+                                setTimeout(() => {
+                                    this.showDamageNumber(actualHeal, 'healing', 'player');
+                                }, 150);
+                                this.log(`${this.player.name} healed for ${actualHeal} HP!`, 'heal');
                             }
                         }
                     }, 100 * (i + 1));  // Stagger the extra attacks
@@ -937,17 +964,20 @@ export class GameEngine {
     }
     
     private enemyAttack() {
+        // Calculate damage with variance
+        const damage = this.calculateDamageWithVariance(this.enemy.damage);
+        
         // Enemy has a chance to attack summons if they exist
         if (this.summons.length > 0 && Math.random() < 0.3) {
             // 30% chance to attack a random summon
             const targetSummon = this.summons[Math.floor(Math.random() * this.summons.length)];
             
             this.triggerAttackAnimation('enemy');
-            this.showDamageNumber(this.enemy.damage, 'enemy', 'player');
+            this.showDamageNumber(damage, 'enemy', 'player');
             
-            targetSummon.hp -= this.enemy.damage;
+            targetSummon.hp -= damage;
             this.log(
-                `${this.enemy.name} attacks ${targetSummon.name} for ${this.enemy.damage} damage!`,
+                `${this.enemy.name} attacks ${targetSummon.name} for ${damage} damage!`,
                 'damage'
             );
             
@@ -956,11 +986,11 @@ export class GameEngine {
         } else {
             // Attack the player
             this.triggerAttackAnimation('enemy');
-            this.showDamageNumber(this.enemy.damage, 'enemy', 'player');
+            this.showDamageNumber(damage, 'enemy', 'player');
             
-            this.player.hp -= this.enemy.damage;
+            this.player.hp -= damage;
             this.log(
-                `${this.enemy.name} slashes for ${this.enemy.damage} damage!`,
+                `${this.enemy.name} slashes for ${damage} damage!`,
                 'damage'
             );
         }
@@ -1039,7 +1069,11 @@ export class GameEngine {
             const canCastHolyStrike = holyStrikeMana && !isOnCooldown && this.globalCooldown <= 0 && this.player.hp > 0;
             
             let holyStrikeIcon = '';
-            const holyStrikeTooltip = `Holy Strike [1]&#10;Mana Cost: 25&#10;Cooldown: 6s&#10;Damage: 25 holy&#10;Heals you for damage dealt${windfuryActive ? '&#10;Can trigger Windfury!' : ''}&#10;&#10;Click or press 1 to cast`;
+            const minMeleeDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MIN);
+            const maxMeleeDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MAX);
+            const minHolyDamage = Math.round(minMeleeDamage * ABILITIES.holyStrike.damageMultiplier);
+            const maxHolyDamage = Math.round(maxMeleeDamage * ABILITIES.holyStrike.damageMultiplier);
+            const holyStrikeTooltip = `Holy Strike [1]&#10;Mana Cost: 25&#10;Cooldown: 6s&#10;Damage: ${minHolyDamage}-${maxHolyDamage} holy&#10;Heals you for damage dealt${windfuryActive ? '&#10;Can trigger Windfury!' : ''}&#10;&#10;Click or press 1 to cast`;
             
             if (isOnCooldown) {
                 holyStrikeIcon = `
@@ -1093,7 +1127,10 @@ export class GameEngine {
             const summonMana = this.player.mana >= this.summonSkeleton.manaCost;
             const canCastSummon = summonMana && canSummon && this.globalCooldown <= 0 && this.player.hp > 0;
             
-            const summonTooltip = `Summon Skeleton [3]&#10;Mana Cost: 50&#10;Duration: 30s&#10;Damage: ${ENEMIES.skeleton.damage} per attack&#10;HP: ${ENEMIES.skeleton.hp}&#10;Max Summons: ${this.maxSummons}&#10;Current: ${this.summons.length}/${this.maxSummons}&#10;&#10;Click or press 3 to summon`;
+            const summonBaseDamage = Math.round(this.player.damage * this.summonSkeleton.summonDamageMultiplier);
+            const minDamage = Math.round(summonBaseDamage * CONFIG.DAMAGE_VARIANCE_MIN);
+            const maxDamage = Math.round(summonBaseDamage * CONFIG.DAMAGE_VARIANCE_MAX);
+            const summonTooltip = `Summon Skeleton [3]&#10;Mana Cost: 50&#10;Duration: 30s&#10;Damage: ${minDamage}-${maxDamage} per attack&#10;HP: ${ENEMIES.skeleton.hp}&#10;Max Summons: ${this.maxSummons}&#10;Current: ${this.summons.length}/${this.maxSummons}&#10;&#10;Click or press 3 to summon`;
             
             const summonIcon = `
                 <div class="ability-icon${canCastSummon ? ' ability-ready' : ' disabled'}" 
@@ -1121,15 +1158,21 @@ export class GameEngine {
                 summonsDisplay = '<div style="margin-top: 10px; padding: 5px; border: 1px solid #333; background: #1a1a1a;"><strong>Active Summons:</strong>';
                 this.summons.forEach((summon, index) => {
                     const timeLeft = (summon.timeRemaining / 1000).toFixed(0);
-                    summonsDisplay += `<div style="color: #d4d4d8;">💀 ${summon.name} #${index + 1} - HP: ${summon.hp}/${summon.maxHp} - Time: ${timeLeft}s</div>`;
+                    const summonMinDmg = Math.round(summon.damage * CONFIG.DAMAGE_VARIANCE_MIN);
+                    const summonMaxDmg = Math.round(summon.damage * CONFIG.DAMAGE_VARIANCE_MAX);
+                    summonsDisplay += `<div style="color: #d4d4d8;">💀 ${summon.name} #${index + 1} - HP: ${summon.hp}/${summon.maxHp} - Dmg: ${summonMinDmg}-${summonMaxDmg} - Time: ${timeLeft}s</div>`;
                 });
                 summonsDisplay += '</div>';
             }
+            
+            const playerMinDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MIN);
+            const playerMaxDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MAX);
             
             playerStats.innerHTML = `
                 <div><strong>Cleric</strong></div>
                 <div>HP: ${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</div>
                 <div>Mana: ${this.player.mana}/${this.player.maxMana}${manaReservedText}</div>
+                <div>Damage: ${playerMinDamage}-${playerMaxDamage}</div>
                 <div>Status: ${playerStatus}</div>
                 ${windfuryActive ? '<div style="color: #51cf66;">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
                 ${abilityDisplay}
@@ -1139,10 +1182,13 @@ export class GameEngine {
         
         if (enemyStats) {
             const enemyNextAttack = ((this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
+            const enemyMinDamage = Math.round(this.enemy.damage * CONFIG.DAMAGE_VARIANCE_MIN);
+            const enemyMaxDamage = Math.round(this.enemy.damage * CONFIG.DAMAGE_VARIANCE_MAX);
             
             enemyStats.innerHTML = `
                 <div><strong>${this.enemy.name}</strong></div>
                 <div>HP: ${this.enemy.hp}/${this.enemy.maxHp}</div>
+                <div>Damage: ${enemyMinDamage}-${enemyMaxDamage}</div>
                 <div>Next Attack: ${enemyNextAttack}s</div>
             `;
         }

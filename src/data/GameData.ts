@@ -9,6 +9,8 @@ export const CONFIG = {
     
     // Combat
     GLOBAL_COOLDOWN: 1500,            // ms after instant cast
+    DAMAGE_VARIANCE_MIN: 0.8,         // Minimum damage multiplier for variance
+    DAMAGE_VARIANCE_MAX: 1.2,         // Maximum damage multiplier for variance
     
     // UI
     MAX_COMBAT_LOG_ENTRIES: 20,
@@ -39,9 +41,9 @@ export const ABILITIES = {
         name: 'Holy Strike',
         manaCost: 25,
         castTime: 0,                  // instant
-        damage: 25,
-        cooldown: 6000,                // 6 second cooldown
-        healOnDamage: true,            // heals player for damage done
+        damageMultiplier: 2.5,        // 2.5x melee damage
+        cooldown: 6000,               // 6 second cooldown
+        healOnDamage: true,           // heals player for damage done
         damageType: 'holy' as const,
         description: 'Instantly strike with holy power, healing yourself for damage done',
         logMessage: (caster: string, damage: number) => 
@@ -71,6 +73,7 @@ export const ABILITIES = {
         manaCost: 50,
         castTime: 0,                  // instant
         duration: 30000,              // 30 seconds
+        summonDamageMultiplier: 0.75, // Summons do 75% of player melee damage
         damageType: 'summon' as const,
         description: 'Summon a skeleton warrior to fight alongside you for 30 seconds',
         logMessage: (caster: string) => 
