@@ -10,6 +10,7 @@ interface Character {
     maxHp: number;
     mana: number;
     maxMana: number;
+    baseMana: number;  // Base mana before reservations
     manaRegen: number;
     damage: number;
 }
@@ -51,6 +52,10 @@ export class GameEngine {
     // Ability cooldowns (separate from GCD)
     private abilityCooldowns: Map<string, number> = new Map();
     
+    // ========== AURA STATE ==========
+    private activeAuras: Set<string> = new Set();
+    private manaReserved: number = 0;
+    
     // ========== TIMING ==========
     private lastUpdate: number = Date.now();
     private manaAccumulator: number = 0;
@@ -75,6 +80,7 @@ export class GameEngine {
             maxHp: PLAYER_CONFIG.BASE_HP,
             mana: PLAYER_CONFIG.BASE_MANA,
             maxMana: PLAYER_CONFIG.BASE_MANA,
+            baseMana: PLAYER_CONFIG.BASE_MANA,
             manaRegen: PLAYER_CONFIG.BASE_MANA_REGEN,
             damage: PLAYER_CONFIG.MELEE_DAMAGE
         };
@@ -87,6 +93,7 @@ export class GameEngine {
             maxHp: enemyType.hp,
             mana: 0,
             maxMana: 0,
+            baseMana: 0,
             manaRegen: 0,
             damage: enemyType.damage
         };
@@ -94,6 +101,7 @@ export class GameEngine {
     
     // ========== ABILITIES ==========
     private holyStrike: Ability;
+    private windfuryAura: any;  // Using any for now since it has different structure
     
     private initializeAbilities() {
         const holyStrikeData = ABILITIES.holyStrike;
@@ -120,6 +128,9 @@ export class GameEngine {
                 }
             }
         };
+        
+        // Initialize Windfury Aura
+        this.windfuryAura = ABILITIES.windfuryAura;
     }
     
     // ========== MAIN GAME LOOP ==========
@@ -143,6 +154,32 @@ export class GameEngine {
             const manaToAdd = Math.floor(this.manaAccumulator);
             this.player.mana = Math.min(this.player.mana + manaToAdd, this.player.maxMana);
             this.manaAccumulator -= manaToAdd;
+        }
+    }
+    
+    // ========== AURA MANAGEMENT ==========
+    public toggleWindfuryAura() {
+        if (this.activeAuras.has('windfury_aura')) {
+            // Deactivate
+            this.activeAuras.delete('windfury_aura');
+            this.manaReserved = 0;
+            this.player.maxMana = this.player.baseMana;
+            // Restore mana if current mana would exceed new max
+            if (this.player.mana > this.player.maxMana) {
+                this.player.mana = this.player.maxMana;
+            }
+            this.log(this.windfuryAura.logMessage(this.player.name, false), this.windfuryAura.logType);
+        } else {
+            // Activate
+            this.activeAuras.add('windfury_aura');
+            this.manaReserved = this.windfuryAura.manaReserve;
+            // Reduce max mana by reserved amount
+            this.player.maxMana = Math.floor(this.player.baseMana * (1 - this.manaReserved));
+            // Reduce current mana if it exceeds new max
+            if (this.player.mana > this.player.maxMana) {
+                this.player.mana = this.player.maxMana;
+            }
+            this.log(this.windfuryAura.logMessage(this.player.name, true), this.windfuryAura.logType);
         }
     }
     
@@ -198,6 +235,11 @@ export class GameEngine {
                     const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
                     const hasMana = this.player.mana >= this.holyStrike.manaCost;
                     return hpPercent < rule.conditionValue && cooldown <= 0 && hasMana;
+                } else if (rule.action === 'toggle_windfury') {
+                    // Only suggest toggle if it would change state
+                    const isActive = this.activeAuras.has('windfury_aura');
+                    const shouldBeActive = hpPercent < rule.conditionValue;
+                    return shouldBeActive !== isActive;
                 }
                 return hpPercent < rule.conditionValue;
             
@@ -206,6 +248,11 @@ export class GameEngine {
                     const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
                     const hasMana = this.player.mana >= this.holyStrike.manaCost;
                     return hpPercent >= rule.conditionValue && cooldown <= 0 && hasMana;
+                } else if (rule.action === 'toggle_windfury') {
+                    // Only suggest toggle if it would change state
+                    const isActive = this.activeAuras.has('windfury_aura');
+                    const shouldBeActive = hpPercent >= rule.conditionValue;
+                    return shouldBeActive !== isActive;
                 }
                 return hpPercent >= rule.conditionValue;
             
@@ -214,6 +261,9 @@ export class GameEngine {
                     const cooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
                     const hasMana = this.player.mana >= this.holyStrike.manaCost;
                     return cooldown <= 0 && hasMana;
+                } else if (rule.action === 'toggle_windfury') {
+                    // For 'always', only toggle if not already active
+                    return !this.activeAuras.has('windfury_aura');
                 }
                 return true;
             
@@ -235,6 +285,16 @@ export class GameEngine {
             case 'melee':
                 if (!this.isSwinging) {
                     this.startMeleeSwing();
+                }
+                break;
+            
+            case 'toggle_windfury':
+                // Only toggle if it would change state (avoid spam)
+                const shouldActivate = !this.activeAuras.has('windfury_aura');
+                if (shouldActivate || this.activeAuras.has('windfury_aura')) {
+                    this.toggleWindfuryAura();
+                    // Add a small GCD to prevent toggle spam
+                    this.globalCooldown = 500;
                 }
                 break;
             
@@ -344,6 +404,7 @@ export class GameEngine {
                     <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
                         <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
                         <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
+                        <option value="toggle_windfury" ${rule.action === 'toggle_windfury' ? 'selected' : ''}>Toggle Windfury</option>
                         <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
                     </select>
                 `;
@@ -356,6 +417,7 @@ export class GameEngine {
                     <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
                         <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
                         <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
+                        <option value="toggle_windfury" ${rule.action === 'toggle_windfury' ? 'selected' : ''}>Toggle Windfury</option>
                         <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
                     </select>
                 `;
@@ -365,6 +427,7 @@ export class GameEngine {
                     <select onchange="window.game.updateRuleValue('${rule.id}', 'action', this.value)">
                         <option value="holy_strike" ${rule.action === 'holy_strike' ? 'selected' : ''}>Holy Strike</option>
                         <option value="melee" ${rule.action === 'melee' ? 'selected' : ''}>Melee</option>
+                        <option value="toggle_windfury" ${rule.action === 'toggle_windfury' ? 'selected' : ''}>Toggle Windfury</option>
                         <option value="none" ${rule.action === 'none' ? 'selected' : ''}>Do Nothing</option>
                     </select>
                 `;
@@ -512,6 +575,27 @@ export class GameEngine {
             `${this.player.name} strikes with their mace for ${this.player.damage} damage!`,
             'melee'
         );
+        
+        // Check for Windfury proc
+        if (this.activeAuras.has('windfury_aura')) {
+            const roll = Math.random();
+            if (roll < this.windfuryAura.windfuryChance) {
+                this.log(`Windfury triggers!`, 'system');
+                
+                // Perform extra attacks
+                for (let i = 0; i < this.windfuryAura.windfuryAttacks; i++) {
+                    setTimeout(() => {
+                        this.triggerAttackAnimation('player');
+                        this.showDamageNumber(this.player.damage, 'physical', 'enemy');
+                        this.enemy.hp -= this.player.damage;
+                        this.log(
+                            `Windfury strike for ${this.player.damage} damage!`,
+                            'melee'
+                        );
+                    }, 100 * (i + 1));  // Stagger the extra attacks
+                }
+            }
+        }
     }
     
     private cancelMeleeSwing() {
@@ -536,6 +620,24 @@ export class GameEngine {
         }
         
         ability.execute(this.player, this.enemy);
+        
+        // Check for Windfury proc on Holy Strike (it's still a melee attack)
+        if (ability.id === 'holy_strike' && this.activeAuras.has('windfury_aura')) {
+            const roll = Math.random();
+            if (roll < this.windfuryAura.windfuryChance) {
+                this.log(`Windfury triggers on Holy Strike!`, 'system');
+                
+                // Perform extra Holy Strikes
+                for (let i = 0; i < this.windfuryAura.windfuryAttacks; i++) {
+                    setTimeout(() => {
+                        this.triggerAttackAnimation('player');
+                        this.showDamageNumber(ability.damage || 0, ability.damageType, 'enemy');
+                        ability.execute(this.player, this.enemy);
+                        this.log(`Windfury Holy Strike!`, 'player-magic');
+                    }, 100 * (i + 1));  // Stagger the extra attacks
+                }
+            }
+        }
     }
     
     // ========== ENEMY COMBAT ==========
@@ -572,7 +674,12 @@ export class GameEngine {
         if (this.player.hp <= 0) {
             this.log(`${this.player.name} has been defeated!`, 'damage');
             this.player.hp = this.player.maxHp;
-            this.player.mana = this.player.maxMana;
+            // Respect mana reservation when respawning
+            if (this.activeAuras.has('windfury_aura')) {
+                this.player.mana = this.player.maxMana;  // Max is already reduced by reservation
+            } else {
+                this.player.mana = this.player.maxMana;
+            }
             this.isSwinging = false;
             this.currentSwingTime = 0;
             this.globalCooldown = 0;
@@ -620,34 +727,63 @@ export class GameEngine {
             const maxCooldown = this.holyStrike.cooldown || 6000;
             const cooldownPercent = holyStrikeCooldown > 0 ? ((maxCooldown - holyStrikeCooldown) / maxCooldown) * 100 : 0;
             const isOnCooldown = holyStrikeCooldown > 0;
+            const windfuryActive = this.activeAuras.has('windfury_aura');
             
-            let abilityDisplay = '';
+            let holyStrikeIcon = '';
+            const holyStrikeTooltip = `Holy Strike&#10;Mana Cost: 25&#10;Cooldown: 6s&#10;Damage: 25 holy&#10;Heals you for damage dealt${windfuryActive ? '&#10;Can trigger Windfury!' : ''}`;
+            
             if (isOnCooldown) {
-                abilityDisplay = `
-                    <div class="ability-cooldowns">
-                        <div class="ability-icon">
-                            <div class="ability-icon-content">H</div>
-                            <div class="cooldown-overlay"></div>
-                            <div class="cooldown-sweep" style="background: conic-gradient(transparent ${cooldownPercent}%, rgba(255, 255, 255, 0.3) ${cooldownPercent}%);"></div>
-                            <div class="cooldown-text">${(holyStrikeCooldown / 1000).toFixed(1)}</div>
-                        </div>
+                holyStrikeIcon = `
+                    <div class="ability-icon" data-tooltip="${holyStrikeTooltip}">
+                        <div class="ability-icon-content">H</div>
+                        <div class="cooldown-overlay"></div>
+                        <div class="cooldown-sweep" style="background: conic-gradient(transparent ${cooldownPercent}%, rgba(255, 255, 255, 0.3) ${cooldownPercent}%);"></div>
+                        <div class="cooldown-text">${(holyStrikeCooldown / 1000).toFixed(1)}</div>
                     </div>
                 `;
             } else {
-                abilityDisplay = `
-                    <div class="ability-cooldowns">
-                        <div class="ability-icon ability-ready">
-                            <div class="ability-icon-content">H</div>
-                        </div>
+                holyStrikeIcon = `
+                    <div class="ability-icon ability-ready" data-tooltip="${holyStrikeTooltip}">
+                        <div class="ability-icon-content">H</div>
                     </div>
                 `;
             }
             
+            // Windfury Aura toggle
+            const windfuryTooltip = `Windfury Aura&#10;Reserves: 50% of max mana&#10;Effect: 20% chance for 2 extra attacks&#10;Works on melee AND Holy Strike!&#10;${windfuryActive ? 'ACTIVE - Click to deactivate' : 'Click to activate'}`;
+            
+            const windfuryIcon = windfuryActive ? `
+                <div class="ability-icon aura-active" 
+                     onclick="window.game.toggleWindfuryAura()" 
+                     style="cursor: pointer; background: #2a4a2a; border-color: #51cf66;" 
+                     data-tooltip="${windfuryTooltip}">
+                    <div class="ability-icon-content" style="color: #51cf66;">W</div>
+                    <div class="aura-indicator" style="position: absolute; top: -5px; right: -5px; width: 10px; height: 10px; background: #51cf66; border-radius: 50%; box-shadow: 0 0 5px #51cf66;"></div>
+                </div>
+            ` : `
+                <div class="ability-icon" 
+                     onclick="window.game.toggleWindfuryAura()" 
+                     style="cursor: pointer;" 
+                     data-tooltip="${windfuryTooltip}">
+                    <div class="ability-icon-content">W</div>
+                </div>
+            `;
+            
+            let abilityDisplay = `
+                <div class="ability-cooldowns">
+                    ${holyStrikeIcon}
+                    ${windfuryIcon}
+                </div>
+            `;
+            
+            const manaReservedText = windfuryActive ? ` (${Math.floor(this.player.baseMana * 0.5)} reserved)` : '';
+            
             playerStats.innerHTML = `
                 <div><strong>Cleric</strong></div>
                 <div>HP: ${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</div>
-                <div>Mana: ${this.player.mana}/${this.player.maxMana}</div>
+                <div>Mana: ${this.player.mana}/${this.player.maxMana}${manaReservedText}</div>
                 <div>Status: ${playerStatus}</div>
+                ${windfuryActive ? '<div style="color: #51cf66;">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
                 ${abilityDisplay}
             `;
         }

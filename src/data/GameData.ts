@@ -8,7 +8,7 @@ export const CONFIG = {
     TICK_RATE: 50,                    // ms between game updates
     
     // Combat
-    GLOBAL_COOLDOWN: 1000,            // ms after instant cast
+    GLOBAL_COOLDOWN: 1500,            // ms after instant cast
     
     // UI
     MAX_COMBAT_LOG_ENTRIES: 20,
@@ -47,6 +47,22 @@ export const ABILITIES = {
         logMessage: (caster: string, damage: number) => 
             `${caster} casts Holy Strike for ${damage} damage!`,
         logType: 'player-magic'
+    },
+    
+    windfuryAura: {
+        id: 'windfury_aura',
+        name: 'Windfury Aura',
+        manaCost: 0,                  // No mana cost
+        manaReserve: 0.5,             // Reserves 50% of max mana
+        castTime: 0,                  // instant toggle
+        isAura: true,                 // Persistent effect
+        windfuryChance: 0.2,          // 20% chance
+        windfuryAttacks: 2,           // 2 extra attacks
+        damageType: 'physical' as const,
+        description: 'Reserves 50% of max mana. Your attacks have a 20% chance to trigger 2 additional strikes',
+        logMessage: (caster: string, active: boolean) => 
+            active ? `${caster} activates Windfury Aura!` : `${caster} deactivates Windfury Aura`,
+        logType: 'system'
     },
     
     // Easy to add more abilities:
