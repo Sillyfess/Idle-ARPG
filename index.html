@@ -22,10 +22,198 @@
             .player-magic { color: #4dabf7; font-weight: bold; }
             .system { color: #868e96; }
             .melee { color: #ffa726; font-style: italic}
+            
+            /* Combat Arena */
+            #combat-arena {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 40px;
+                background: linear-gradient(to bottom, #1a1a1a, #0f0f0f);
+                border: 2px solid #333;
+                margin: 20px 0;
+                min-height: 200px;
+                position: relative;
+            }
+            
+            /* Character Containers */
+            .character-slot {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            /* Sprite Containers - 32x32 */
+            .sprite-container {
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+            }
+            
+            .sprite {
+                font-size: 24px;
+                font-weight: bold;
+                font-family: 'Courier New', monospace;
+                animation: idle-float 3s ease-in-out infinite;
+                user-select: none;
+            }
+            
+            #player-sprite {
+                color: #4a9eff;
+                text-shadow: 0 0 10px #4a9eff;
+            }
+            
+            #enemy-sprite {
+                color: #ff4444;
+                text-shadow: 0 0 10px #ff4444;
+            }
+            
+            /* Idle floating animation */
+            @keyframes idle-float {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-3px); }
+            }
+            
+            /* Attack animations */
+            .attacking {
+                animation: attack-lunge 0.3s !important;
+            }
+            
+            @keyframes attack-lunge {
+                0% { transform: translateX(0) scale(1); }
+                50% { transform: translateX(10px) scale(1.2); }
+                100% { transform: translateX(0) scale(1); }
+            }
+            
+            .enemy-attacking {
+                animation: enemy-attack-lunge 0.3s !important;
+            }
+            
+            @keyframes enemy-attack-lunge {
+                0% { transform: translateX(0) scale(1); }
+                50% { transform: translateX(-10px) scale(1.2); }
+                100% { transform: translateX(0) scale(1); }
+            }
+            
+            /* Damage taken animation */
+            .damaged {
+                animation: damage-flash 0.3s !important;
+            }
+            
+            @keyframes damage-flash {
+                0%, 100% { filter: brightness(1); }
+                50% { filter: brightness(2) hue-rotate(180deg); }
+            }
+            
+            /* Health and Mana Bars */
+            .bar-container {
+                width: 100px;
+                height: 14px;
+                background: #1a1a1a;
+                border: 1px solid #444;
+                position: relative;
+            }
+            
+            .health-bar {
+                height: 100%;
+                background: linear-gradient(to right, #c62828, #ef5350);
+                transition: width 0.3s ease;
+                position: relative;
+            }
+            
+            .mana-bar {
+                height: 100%;
+                background: linear-gradient(to right, #1565c0, #42a5f5);
+                transition: width 0.3s ease;
+            }
+            
+            .bar-text {
+                position: absolute;
+                width: 100%;
+                text-align: center;
+                font-size: 10px;
+                line-height: 14px;
+                color: white;
+                text-shadow: 1px 1px 2px black;
+                pointer-events: none;
+            }
+            
+            /* Floating Damage Numbers */
+            .damage-number {
+                position: absolute;
+                font-size: 24px;
+                font-weight: bold;
+                pointer-events: none;
+                z-index: 100;
+                animation: float-up 1.5s ease-out forwards;
+            }
+            
+            @keyframes float-up {
+                0% {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+                100% {
+                    transform: translateY(-60px);
+                    opacity: 0;
+                }
+            }
+            
+            .damage-holy {
+                color: #64b5f6;
+                text-shadow: 0 0 10px #2196f3;
+            }
+            
+            .damage-physical {
+                color: #ffa726;
+                text-shadow: 0 0 10px #ff6600;
+            }
+            
+            .damage-enemy {
+                color: #ef5350;
+                text-shadow: 0 0 10px #c62828;
+            }
         </style>
     </head>
     <body>
         <div id="stats"></div>
+        
+        <!-- Combat Arena -->
+        <div id="combat-arena">
+            <!-- Player Side -->
+            <div class="character-slot">
+                <div class="sprite-container">
+                    <div id="player-sprite" class="sprite">C</div>
+                </div>
+                <div class="bar-container">
+                    <div id="player-health-bar" class="health-bar" style="width: 100%">
+                        <div class="bar-text">100/100</div>
+                    </div>
+                </div>
+                <div class="bar-container">
+                    <div id="player-mana-bar" class="mana-bar" style="width: 100%">
+                        <div class="bar-text">100/100</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Enemy Side -->
+            <div class="character-slot">
+                <div class="sprite-container">
+                    <div id="enemy-sprite" class="sprite">S</div>
+                </div>
+                <div class="bar-container">
+                    <div id="enemy-health-bar" class="health-bar" style="width: 100%">
+                        <div class="bar-text">100/100</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <div id="combat-log"></div>
         <script type="module" src="/src/main.ts"></script>
     </body>
