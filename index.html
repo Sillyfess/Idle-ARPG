@@ -7,7 +7,7 @@
                 font-family: monospace;
                 background: #0f0f0f;
                 color: #f8f5f5;
-                padding: 200px;
+                padding: 20px;
             }
             #combat-log {
                 height: 400px;
@@ -19,12 +19,54 @@
             .damage { color: #ff6b6b; }
             .heal { color: #51cf66; }
             .mana { color: #339af0; }
+            .player-magic { color: #4dabf7; font-weight: bold; }
             .system { color: #868e96; }
             .melee { color: #ffa726; font-style: italic}
+            
+            /* Progress Bars */
+            .progress-container {
+                margin: 10px 0;
+            }
+            
+            .progress-label {
+                color: #868e96;
+                font-size: 12px;
+                margin-bottom: 4px;
+            }
+            
+            .progress-bar-bg {
+                width: 100%;
+                height: 20px;
+                background: #2a2a2a;
+                border: 1px solid #444;
+            }
+            
+            .progress-bar {
+                height: 100%;
+                background: #51cf66;
+                width: 0%;
+                transition: width 0.1s linear;
+            }
         </style>
     </head>
     <body>
         <div id="stats"></div>
+        
+        <!-- Progress Bars -->
+        <div class="progress-container">
+            <div class="progress-label">Player Attack</div>
+            <div class="progress-bar-bg">
+                <div id="player-progress" class="progress-bar"></div>
+            </div>
+        </div>
+        
+        <div class="progress-container">
+            <div class="progress-label">Enemy Attack</div>
+            <div class="progress-bar-bg">
+                <div id="enemy-progress" class="progress-bar"></div>
+            </div>
+        </div>
+        
         <div id="combat-log"></div>
         <script type="module" src="/src/main.ts"></script>
     </body>

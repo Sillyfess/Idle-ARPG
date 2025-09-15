@@ -67,7 +67,7 @@ class CombatEngine {
         damage: 25,
         execute: (caster, target) => {
             target.hp -= this.holyStrike.damage;
-            this.log(`${caster.name} casts Holy Strike for ${this.holyStrike.damage} damage!`, 'damage');
+            this.log(`${caster.name} casts Holy Strike for ${this.holyStrike.damage} damage!`, 'player-magic');
         }
     };
 
@@ -215,6 +215,35 @@ class CombatEngine {
             <div>Player: ${this.player.hp}/${this.player.maxHp} HP | ${this.player.mana}/${this.player.maxMana} Mana | ${playerStatus}</div>
             <div>Enemy: ${this.enemy.hp}/${this.enemy.maxHp} HP | Next attack: ${enemyNextAttack}s</div>
             `;
+        }
+        
+        // Update player progress bar
+        const playerProgress = document.getElementById('player-progress') as HTMLElement;
+        if (playerProgress) {
+            let progressPercent = 0;
+            
+            if (this.isSwinging) {
+                // Show swing progress (how much completed)
+                progressPercent = ((this.meleeSwingTime - this.currentSwingTime) / this.meleeSwingTime) * 100;
+            } else if (this.globalCooldown > 0) {
+                // Show GCD progress (how much completed)
+                progressPercent = ((this.gcdDuration - this.globalCooldown) / this.gcdDuration) * 100;
+            }
+            
+            playerProgress.style.width = `${progressPercent}%`;
+        }
+        
+        // Update enemy progress bar
+        const enemyProgress = document.getElementById('enemy-progress') as HTMLElement;
+        if (enemyProgress) {
+            let progressPercent = 0;
+            
+            if (this.enemy.hp > 0 && this.player.hp > 0) {
+                // Show attack timer progress
+                progressPercent = (this.enemyAttackTimer / this.enemyAttackSpeed) * 100;
+            }
+            
+            enemyProgress.style.width = `${progressPercent}%`;
         }
     }
 }
