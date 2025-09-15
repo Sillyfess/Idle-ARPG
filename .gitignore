@@ -22,3 +22,6 @@ npm-debug.log*
 # Environment variables
 .env
 .env.local
+
+# AI Assistant Configuration
+CLAUDE.md

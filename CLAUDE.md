@@ -4,34 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an Idle ARPG game built with TypeScript. The project uses a web-based interface with an HTML entry point that loads TypeScript modules directly.
+This is an Idle ARPG game built with TypeScript. The project uses a web-based interface with an HTML entry point that loads TypeScript modules directly through Vite.
 
 ## Commands
 
 ### Development
-- Run development server: Use a local web server that supports TypeScript modules (e.g., `npx vite` or `npx http-server`)
-- TypeScript compilation: `npx tsc` (once tsconfig.json is configured)
+- **Start dev server**: `npx vite` - Runs the Vite development server with TypeScript HMR support
+- **Build for production**: `npx vite build` - Creates optimized production build
+- **Preview production build**: `npx vite preview` - Test the production build locally
+- **TypeScript compilation check**: `npx tsc --noEmit` - Type-check without emitting files
 
 ### Setup
-- Install dependencies: `npm install` (after package.json is populated)
-- Initialize TypeScript config: `npx tsc --init` (if tsconfig.json needs configuration)
+- **Install dependencies**: `npm install` - Installs TypeScript and Vite dev dependencies
 
 ## Architecture
 
-### Core Structure
-- **index.html**: Main entry point with combat log UI and basic styling
-- **src/main.ts**: Main TypeScript module loaded directly by the browser
-- Game focuses on idle/incremental mechanics with ARPG combat elements
+### Core Game Engine (`src/main.ts`)
+The game implements a real-time combat system with:
+- **CombatEngine class**: Central game loop running at 20 ticks/second (50ms intervals)
+- **Character system**: Interface-based entities with HP, mana, damage, and regeneration stats
+- **Ability system**: Casting mechanics with mana costs and cast times
+- **Combat mechanics**:
+  - Holy Strike ability: 25 mana cost, 1 second cast time, 25 damage
+  - Melee attacks: Auto-attack fallback when out of mana (1.5 second attack speed)
+  - Mana regeneration: Smooth accumulator-based regen system
 
-### Key Implementation Areas
-The project is set up for:
-- Combat system with damage, healing, and mana mechanics
-- Real-time combat log display
-- Stats tracking and display
-- Modular TypeScript architecture using ES modules
+### UI Structure
+- **index.html**: Single-page application with:
+  - Stats display area showing player/enemy HP and mana
+  - Combat log with 20-entry history
+  - Dark theme with monospace font aesthetic
+  - CSS classes for combat events: `.damage`, `.heal`, `.mana`, `.system`, `.melee`
+
+### TypeScript Configuration
+- **Module system**: ESNext modules with NodeNext resolution
+- **Strict mode**: Full strict type checking enabled
+- **Additional safety**: `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` enabled
+- **Source maps**: Enabled for development debugging
 
 ## Development Notes
 
-- The project uses native ES modules loaded directly in the browser
-- Styling uses a dark theme with monospace fonts for a classic RPG feel
-- Combat log uses color coding: red for damage, green for healing, blue for mana, gray for system messages
+- The game loop uses `Date.now()` for precise delta time calculations
+- Mana regeneration uses an accumulator pattern to handle fractional regeneration smoothly
+- Combat log timestamps use `toLocaleTimeString()` for user-friendly display
+- No test framework currently configured (npm test returns error)
+- Project uses Vite for development with native TypeScript support (no build step required during development)

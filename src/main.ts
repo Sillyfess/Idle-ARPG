@@ -19,17 +19,24 @@ interface Ability {
 class CombatEngine {
     private player: Character;
     private enemy: Character;
-    private currentCastTime: number = 0
-    private isCasting: boolean = false;
     private combatLog: Array<{message: string, type: string}> = [];
 
-    // This becomes important - we're tracking time precisely
+    // Player melee swing timer
+    private currentSwingTime: number = 0;
+    private isSwinging: boolean = false;
+    private meleeSwingTime: number = 4500; // 4.5 second swing timer
+
+    // Enemy attack timer
+    private enemyAttackTimer: number = 0;
+    private enemyAttackSpeed: number = 3000; // Enemy attacks every 3 seconds
+
+    // Global cooldown for instant spells
+    private globalCooldown: number = 0;
+    private gcdDuration: number = 1000; // 1 second GCD
+
+    // Time tracking
     private lastUpdate: number = Date.now();
     private manaAccumulator: number = 0;
-
-    // Melee attack timing
-    private timeSinceLastAttack: number = 0;
-    private attackSpeed: number = 1500;
 
     constructor() {
         this.player = {
@@ -44,23 +51,23 @@ class CombatEngine {
 
         this.enemy = {
             name: "Skeleton",
-            hp: 50,
-            maxHp: 50,
+            hp: 100,
+            maxHp: 100,
             mana: 0,
             maxMana: 0,
             manaRegen: 0,
-            damage: 5
+            damage: 10
         };
     }
 
     private holyStrike: Ability = {
         name: "Holy Strike",
         manaCost: 25,
-        castTime: 1000, // 1 second cast
+        castTime: 0, // Instant cast
         damage: 25,
         execute: (caster, target) => {
             target.hp -= this.holyStrike.damage;
-            this.log (`${caster.name} casts Holy Strike for ${this.holyStrike.damage} damage!`, 'damage');
+            this.log(`${caster.name} casts Holy Strike for ${this.holyStrike.damage} damage!`, 'damage');
         }
     };
 
@@ -77,55 +84,99 @@ class CombatEngine {
             this.manaAccumulator -= manaToAdd;
         }
 
-        // Melee timing
-        this.timeSinceLastAttack += deltaTime;
+        // Update timers
+        if (this.globalCooldown > 0) {
+            this.globalCooldown -= deltaTime;
+        }
 
-        // Handle casting
-        if (!this.isCasting) {
+        // Handle player melee swing timer
+        if (this.isSwinging) {
+            this.currentSwingTime -= deltaTime;
+            if (this.currentSwingTime <= 0) {
+                this.completeMeleeSwing();
+            }
+        }
+
+        // Handle enemy attacks
+        if (this.enemy.hp > 0 && this.player.hp > 0) {
+            this.enemyAttackTimer += deltaTime;
+            if (this.enemyAttackTimer >= this.enemyAttackSpeed) {
+                this.enemyAttack();
+                this.enemyAttackTimer = 0;
+            }
+        }
+
+        // Decide player action (spells interrupt swings)
+        if (this.player.hp > 0 && this.globalCooldown <= 0) {
             if (this.player.mana >= this.holyStrike.manaCost) {
-                this.startCast(this.holyStrike);
-            } else if (this.timeSinceLastAttack >= this.attackSpeed) {
-                this.meleeAttack();
-            }
-        }
-        
-
-        if (this.isCasting) {
-            this.currentCastTime -= deltaTime;
-            if (this.currentCastTime <= 0) {
-                this.completeCast(this.holyStrike);
+                // Cancel swing if we're swinging and cast spell instead
+                if (this.isSwinging) {
+                    this.cancelMeleeSwing();
+                }
+                this.castInstantSpell(this.holyStrike);
+            } else if (!this.isSwinging) {
+                // Only start a new swing if we're not already swinging
+                this.startMeleeSwing();
             }
         }
 
-        // Check combat end
-        if (this.enemy.hp <=0) {
+        // Check combat end conditions
+        if (this.enemy.hp <= 0) {
             this.log(`${this.enemy.name} defeated!`, 'system');
             this.enemy.hp = this.enemy.maxHp;
+            this.enemyAttackTimer = 0; // Reset enemy attack timer
             this.log(`New ${this.enemy.name} appears!`, 'system');
+        }
+
+        if (this.player.hp <= 0) {
+            this.log(`${this.player.name} has been defeated!`, 'damage');
+            this.player.hp = this.player.maxHp;
+            this.player.mana = this.player.maxMana;
+            this.isSwinging = false;
+            this.currentSwingTime = 0;
+            this.globalCooldown = 0;
+            this.log(`${this.player.name} respawns with full health and mana!`, 'heal');
         }
 
         this.updateDisplay();
     }
 
-    private meleeAttack() {
+    private startMeleeSwing() {
+        this.isSwinging = true;
+        this.currentSwingTime = this.meleeSwingTime;
+        this.log(`${this.player.name} begins swinging their mace...`, 'system');
+    }
+
+    private completeMeleeSwing() {
+        this.isSwinging = false;
         this.enemy.hp -= this.player.damage;
-        this.timeSinceLastAttack = 0;
         this.log(
-            `${this.player.name} swings their mace for ${this.player.damage} damage!`,
+            `${this.player.name} strikes with their mace for ${this.player.damage} damage!`,
             'melee'
-        )
+        );
     }
 
-    private startCast(ability: Ability) {
-        this.isCasting = true;
-        this.currentCastTime = ability.castTime;
+    private cancelMeleeSwing() {
+        this.isSwinging = false;
+        this.currentSwingTime = 0;
+        this.log(`${this.player.name} interrupts their swing to cast a spell`, 'system');
+    }
+
+    private castInstantSpell(ability: Ability) {
+        // Deduct mana and trigger GCD
         this.player.mana -= ability.manaCost;
-        this.log(`Casting ${ability.name}...`, 'mana');
+        this.globalCooldown = this.gcdDuration;
+
+        // Execute the ability immediately (it's instant)
+        ability.execute(this.player, this.enemy);
     }
 
-    private completeCast(ability: Ability) {
-        this.isCasting = false;
-        ability.execute(this.player, this.enemy);
+    private enemyAttack() {
+        this.player.hp -= this.enemy.damage;
+        this.log(
+            `${this.enemy.name} slashes for ${this.enemy.damage} damage!`,
+            'damage'
+        );
     }
 
     private log(message: string, type: string = 'system') {
@@ -148,13 +199,21 @@ class CombatEngine {
     private updateDisplay() {
         const stats = document.getElementById('stats');
         if (stats) {
-            const meleeReady = this.timeSinceLastAttack >= this.attackSpeed;
-            const meleeTimeLeft = Math.max(0, this.attackSpeed - this.timeSinceLastAttack) / 1000;
+            let playerStatus = 'Ready';
+            if (this.player.hp <= 0) {
+                playerStatus = 'Dead';
+            } else if (this.isSwinging) {
+                const swingTimeLeft = (this.currentSwingTime / 1000).toFixed(1);
+                playerStatus = `Swinging: ${swingTimeLeft}s`;
+            } else if (this.globalCooldown > 0) {
+                playerStatus = `GCD: ${(this.globalCooldown / 1000).toFixed(1)}s`;
+            }
+
+            const enemyNextAttack = ((this.enemyAttackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
 
             stats.innerHTML = `
-            <div>Player: ${this.player.hp}/${this.player.maxHp} HP | ${this.player.mana}/${this.player.maxMana} Mana</div>
-            <div> Enemy: ${this.enemy.hp}/${this.enemy.maxHp} HP</div>
-            <div>${this.isCasting ? 'Casting...' : 'Ready'}</div>
+            <div>Player: ${this.player.hp}/${this.player.maxHp} HP | ${this.player.mana}/${this.player.maxMana} Mana | ${playerStatus}</div>
+            <div>Enemy: ${this.enemy.hp}/${this.enemy.maxHp} HP | Next attack: ${enemyNextAttack}s</div>
             `;
         }
     }
