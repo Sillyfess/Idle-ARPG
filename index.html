@@ -38,11 +38,53 @@
                 justify-content: space-between;
                 align-items: center;
                 padding: 40px;
-                background: linear-gradient(to bottom, #1a1a1a, #0f0f0f);
+                background: #000000;
                 border: 2px solid #333;
                 margin: 20px 0;
                 min-height: 200px;
                 position: relative;
+                overflow: hidden;
+            }
+            
+            /* ASCII Trees Background */
+            .arena-trees {
+                position: absolute;
+                font-family: 'Courier New', monospace;
+                color: #1a331a;
+                font-size: 14px;
+                line-height: 0.9;
+                white-space: pre;
+                user-select: none;
+                pointer-events: none;
+                z-index: 1;
+            }
+            
+            .trees-left {
+                left: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+            
+            .trees-right {
+                right: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+            
+            .trees-top {
+                top: 5px;
+                left: 50%;
+                transform: translateX(-50%);
+                display: flex;
+                gap: 40px;
+            }
+            
+            .trees-bottom {
+                bottom: 5px;
+                left: 50%;
+                transform: translateX(-50%);
+                display: flex;
+                gap: 50px;
             }
             
             /* Character Containers */
@@ -51,12 +93,14 @@
                 flex-direction: column;
                 align-items: center;
                 gap: 10px;
+                position: relative;
+                z-index: 10;
             }
             
-            /* Sprite Containers - 32x32 */
+            /* Sprite Containers */
             .sprite-container {
-                width: 32px;
-                height: 32px;
+                width: 40px;
+                height: 45px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -74,11 +118,17 @@
             #player-sprite {
                 color: #4a9eff;
                 text-shadow: 0 0 10px #4a9eff;
+                font-size: 28px;
             }
             
             #enemy-sprite {
-                color: #ff4444;
+                color: #f5f5dc;
                 text-shadow: 0 0 10px #ff4444;
+                font-size: 13px;
+                line-height: 0.8;
+                white-space: pre;
+                text-align: center;
+                font-family: 'Courier New', monospace;
             }
             
             /* Remove idle floating animation 
@@ -486,10 +536,36 @@
         
         <!-- Combat Arena -->
         <div id="combat-arena">
+            <!-- ASCII Trees Background -->
+            <div class="arena-trees" style="color: #2d5a2d; left: 10px; top: 20%;">    /\
+   /--\
+  /----\</div>
+            <div class="arena-trees" style="color: #1f4a1f; left: 80px; top: 60%;">   /\
+  /--\
+ /----\</div>
+            <div class="arena-trees" style="color: #2d5a2d; right: 10px; top: 25%;">    /\
+   /--\
+  /----\</div>
+            <div class="arena-trees" style="color: #1f4a1f; right: 90px; top: 55%;">   /\
+  /--\
+ /----\</div>
+            <div class="arena-trees" style="color: #1a331a; top: 10px; left: 20%;">  /\
+ /--\
+/----\</div>
+            <div class="arena-trees" style="color: #1a331a; top: 15px; right: 30%;">  /\
+ /--\
+/----\</div>
+            <div class="arena-trees" style="color: #1f4a1f; bottom: 20px; left: 25%;">  /\
+ /--\
+/----\</div>
+            <div class="arena-trees" style="color: #1f4a1f; bottom: 25px; right: 20%;">  /\
+ /--\
+/----\</div>
+            
             <!-- Player Side -->
             <div class="character-slot">
                 <div class="sprite-container">
-                    <div id="player-sprite" class="sprite">C</div>
+                    <div id="player-sprite" class="sprite">✦</div>
                 </div>
                 <div class="bar-container">
                     <div id="player-health-bar" class="health-bar" style="width: 100%">
@@ -504,12 +580,14 @@
             </div>
             
             <!-- Summon Container - positioned in front of player -->
-            <div id="summon-container" style="position: absolute; left: 0; bottom: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+            <div id="summon-container" style="position: absolute; left: 0; bottom: 0; width: 100%; height: 100%; pointer-events: none; z-index: 8;"></div>
             
             <!-- Enemy Side -->
             <div class="character-slot">
                 <div class="sprite-container">
-                    <div id="enemy-sprite" class="sprite">S</div>
+                    <div id="enemy-sprite" class="sprite">0
+/|\
+/\</div>
                 </div>
                 <div class="bar-container">
                     <div id="enemy-health-bar" class="health-bar" style="width: 100%">

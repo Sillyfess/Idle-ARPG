@@ -30,7 +30,7 @@ export const PLAYER_CONFIG = {
     MELEE_SWING_TIME: 4500,           // ms to complete a swing
     
     // Visual
-    SPRITE_TEXT: 'C',
+    SPRITE_TEXT: '✦',                // Cross/star symbol
     SPRITE_COLOR: '#4a9eff',
 };
 
@@ -104,9 +104,9 @@ export const ENEMIES = {
         damage: 10,
         attackSpeed: 3000,            // ms between attacks
         
-        // Visual
-        sprite: 'S',
-        spriteColor: '#ff4444',
+        // Visual - ASCII skeleton (simplified)
+        sprite: 'o',  // Simple skeleton head for summons
+        spriteColor: '#f5f5dc',  // Bone white
         
         // Rewards (for future)
         xpReward: 10,

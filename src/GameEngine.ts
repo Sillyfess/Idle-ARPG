@@ -595,8 +595,8 @@ export class GameEngine {
             attackSpeed: ENEMIES.skeleton.attackSpeed,
             attackTimer: 0,
             timeRemaining: this.summonSkeleton.duration,
-            sprite: ENEMIES.skeleton.sprite,
-            spriteColor: ENEMIES.skeleton.spriteColor
+            sprite: 'o',  // Simple skeleton for summons
+            spriteColor: '#87ceeb'  // Light blue to show it's friendly
         };
         
         this.summons.push(newSummon);
@@ -694,11 +694,12 @@ export class GameEngine {
             summonDiv.style.position = 'absolute';
             summonDiv.style.left = `${100 + index * 60}px`; // Stack them horizontally
             summonDiv.style.bottom = '50px';
-            summonDiv.style.fontSize = '48px';
-            summonDiv.style.color = summon.spriteColor || '#ff4444';
+            summonDiv.style.fontSize = '36px';
+            summonDiv.style.color = summon.spriteColor || '#f5f5dc';
             summonDiv.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.8)';
             summonDiv.style.zIndex = '5';
-            summonDiv.textContent = summon.sprite || 'S';
+            summonDiv.style.lineHeight = '1';
+            summonDiv.textContent = summon.sprite || 'o';
             
             // Add health bar
             const healthBar = document.createElement('div');
@@ -1672,6 +1673,12 @@ export class GameEngine {
             this.enemy = this.createEnemy(this.currentEnemyType);
             this.enemyAttackTimer = 0;
             this.log(`New ${this.enemy.name} appears!`, 'system');
+            
+            // Update enemy sprite to show ASCII skeleton
+            const enemySprite = document.getElementById('enemy-sprite');
+            if (enemySprite) {
+                enemySprite.innerHTML = '0\n/|\\\n/\\';
+            }
         }
         
         if (this.player.hp <= 0) {
