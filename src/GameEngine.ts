@@ -1999,18 +1999,34 @@ export class GameEngine {
         // Get position for this splat in the diamond
         const position = this.diamondPositions[stack.length] || this.diamondPositions[0];
         
-        // Position based on target
-        if (target === 'enemy') {
-            splatElement.style.right = `${100 - position.x}px`;
-            splatElement.style.left = 'auto';
-        } else {
-            splatElement.style.left = `${100 + position.x}px`;
-            splatElement.style.right = 'auto';
+        // Get character slots for better positioning
+        const characterSlots = arena.querySelectorAll('.character-slot');
+        let baseX = 0;
+        let baseY = 0;
+        
+        if (target === 'enemy' && characterSlots[1]) {
+            // Enemy is the second character slot
+            const enemySlot = characterSlots[1] as HTMLElement;
+            const rect = enemySlot.getBoundingClientRect();
+            const arenaRect = arena.getBoundingClientRect();
+            baseX = rect.left - arenaRect.left + rect.width / 2 - 25; // Center horizontally (25 is half splat width)
+            // Position splats to cover the sprite (32px tall)
+            // With baseY at -10, center splat runs from -10 to 35px (45px tall splat)
+            // This covers the sprite (0-32px) with bottom just above the gap before health bar
+            baseY = rect.top - arenaRect.top - 10; // Center splat over sprite
+        } else if (target === 'player' && characterSlots[0]) {
+            // Player is the first character slot
+            const playerSlot = characterSlots[0] as HTMLElement;
+            const rect = playerSlot.getBoundingClientRect();
+            const arenaRect = arena.getBoundingClientRect();
+            baseX = rect.left - arenaRect.left + rect.width / 2 - 25; // Center horizontally
+            // Position splats to cover the sprite
+            baseY = rect.top - arenaRect.top - 10; // Center splat over sprite
         }
         
-        // Convert y offset to pixels and position from top
-        const baseTopPixels = arena.offsetHeight * 0.45;
-        splatElement.style.top = `${baseTopPixels + position.y}px`;
+        // Apply diamond offset
+        splatElement.style.left = `${baseX + position.x}px`;
+        splatElement.style.top = `${baseY + position.y}px`;
         
         arena.appendChild(splatElement);
         stack.push(splatElement);
@@ -2024,15 +2040,28 @@ export class GameEngine {
             splatElement.remove();
             
             // Reposition remaining splats in diamond pattern
+            const characterSlots = arena.querySelectorAll('.character-slot');
+            let newBaseX = 0;
+            let newBaseY = 0;
+            
+            if (target === 'enemy' && characterSlots[1]) {
+                const enemySlot = characterSlots[1] as HTMLElement;
+                const rect = enemySlot.getBoundingClientRect();
+                const arenaRect = arena.getBoundingClientRect();
+                newBaseX = rect.left - arenaRect.left + rect.width / 2 - 25;
+                newBaseY = rect.top - arenaRect.top - 10;
+            } else if (target === 'player' && characterSlots[0]) {
+                const playerSlot = characterSlots[0] as HTMLElement;
+                const rect = playerSlot.getBoundingClientRect();
+                const arenaRect = arena.getBoundingClientRect();
+                newBaseX = rect.left - arenaRect.left + rect.width / 2 - 25;
+                newBaseY = rect.top - arenaRect.top - 10;
+            }
+            
             stack.forEach((elem, i) => {
                 const newPos = this.diamondPositions[i] || this.diamondPositions[0];
-                if (target === 'enemy') {
-                    elem.style.right = `${100 - newPos.x}px`;
-                } else {
-                    elem.style.left = `${100 + newPos.x}px`;
-                }
-                const baseTopPixels = arena.offsetHeight * 0.45;
-                elem.style.top = `${baseTopPixels + newPos.y}px`;
+                elem.style.left = `${newBaseX + newPos.x}px`;
+                elem.style.top = `${newBaseY + newPos.y}px`;
             });
         }, CONFIG.DAMAGE_NUMBER_DURATION);
     }
