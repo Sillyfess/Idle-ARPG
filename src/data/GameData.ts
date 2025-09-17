@@ -5,7 +5,7 @@
 // Core game configuration
 export const CONFIG = {
     // Timing
-    TICK_RATE: 50,                    // ms between game updates
+    TICK_RATE: 100,                    // ms between game updates
     
     // Combat
     GLOBAL_COOLDOWN: 1500,            // ms after instant cast
@@ -13,7 +13,7 @@ export const CONFIG = {
     DAMAGE_VARIANCE_MAX: 1.2,         // Maximum damage multiplier for variance
     
     // UI
-    MAX_COMBAT_LOG_ENTRIES: 20,
+    MAX_COMBAT_LOG_ENTRIES: 30,
     DAMAGE_NUMBER_DURATION: 800,      // ms before fade (RuneScape-style)
     ANIMATION_DURATION: 300,          // ms for attack animations
 };
