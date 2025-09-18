@@ -448,7 +448,7 @@ export class GameEngine {
     }
     
     // ========== ABILITIES ==========
-    private holyStrike: Ability;
+    private holyStrike!: Ability;
     private windfuryAura: any;  // Using any for now since it has different structure
     private summonSkeleton: any;
     
@@ -961,57 +961,46 @@ export class GameEngine {
     
     // ========== SHOP UI ==========
     private createShopUI() {
-        // Create shop button
+        const dock = document.getElementById('utility-controls') ?? document.body;
+
+        const container = document.createElement('div');
+        container.id = 'shop-container';
+        container.className = 'utility-group';
+
         const shopBtn = document.createElement('button');
         shopBtn.id = 'shop-button';
-        shopBtn.innerHTML = `Shop [S]`;
-        shopBtn.style.cssText = `
-            position: absolute;
-            top: 10px;
-            right: calc(50% - 280px);
-            padding: 8px 15px;
-            background: #2a2a2a;
-            border: 2px solid #444;
-            color: #d4d4d8;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 100;
-        `;
+        shopBtn.className = 'control-chip';
+        shopBtn.textContent = 'Shop [S]';
         shopBtn.onclick = () => this.toggleShop();
-        
-        // Create shop panel (hidden by default)
+
         const shopPanel = document.createElement('div');
         shopPanel.id = 'shop-panel';
-        shopPanel.style.cssText = `
-            position: absolute;
-            top: 50px;
-            right: calc(50% - 280px);
-            width: 300px;
-            background: #1a1a1a;
-            border: 2px solid #444;
-            padding: 10px;
-            display: none;
-            z-index: 100;
-        `;
-        
-        document.body.appendChild(shopBtn);
-        document.body.appendChild(shopPanel);
-        
+        shopPanel.className = 'utility-panel';
+
+        container.appendChild(shopBtn);
+        container.appendChild(shopPanel);
+        dock.appendChild(container);
+
         this.updateShopUI();
     }
-    
+
     public toggleShop() {
         this.shopOpen = !this.shopOpen;
         const panel = document.getElementById('shop-panel');
-        if (panel) {
-            panel.style.display = this.shopOpen ? 'block' : 'none';
-        }
-        // Close inventory if shop opens
-        if (this.shopOpen && this.inventoryOpen) {
-            this.toggleInventory();
-        }
+        const button = document.getElementById('shop-button');
+
+        panel?.classList.toggle('open', this.shopOpen);
+        button?.classList.toggle('active', this.shopOpen);
+
         if (this.shopOpen) {
+            if (this.inventoryOpen) {
+                this.inventoryOpen = false;
+                const inventoryPanel = document.getElementById('inventory-panel');
+                const inventoryButton = document.getElementById('inventory-button');
+                inventoryPanel?.classList.remove('open');
+                inventoryButton?.classList.remove('active');
+            }
+
             this.updateShopUI();
         }
     }
@@ -1113,67 +1102,46 @@ export class GameEngine {
     
     // ========== INVENTORY UI ==========
     private createInventoryUI() {
-        // Create inventory container
+        const dock = document.getElementById('utility-controls') ?? document.body;
+
         const inventoryContainer = document.createElement('div');
         inventoryContainer.id = 'inventory-container';
-        inventoryContainer.style.cssText = `
-            position: absolute;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 100;
-        `;
-        
-        // Create inventory button
+        inventoryContainer.className = 'utility-group';
+
         const inventoryBtn = document.createElement('button');
         inventoryBtn.id = 'inventory-button';
+        inventoryBtn.className = 'control-chip';
         inventoryBtn.innerHTML = `Inventory (${this.inventory.length}/${this.maxInventorySize}) [I]`;
-        inventoryBtn.style.cssText = `
-            padding: 8px 15px;
-            background: #2a2a2a;
-            border: 2px solid #444;
-            color: #d4d4d8;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-        `;
         inventoryBtn.onclick = () => this.toggleInventory();
-        
-        // Create inventory panel (hidden by default)
+
         const inventoryPanel = document.createElement('div');
         inventoryPanel.id = 'inventory-panel';
-        inventoryPanel.style.cssText = `
-            position: absolute;
-            top: 40px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 400px;
-            background: #1a1a1a;
-            border: 2px solid #444;
-            padding: 10px;
-            display: none;
-            max-height: 500px;
-            overflow-y: auto;
-        `;
-        
+        inventoryPanel.className = 'utility-panel';
+
         inventoryContainer.appendChild(inventoryBtn);
         inventoryContainer.appendChild(inventoryPanel);
-        document.body.appendChild(inventoryContainer);
-        
+        dock.appendChild(inventoryContainer);
+
         this.updateInventoryUI();
     }
-    
+
     public toggleInventory() {
         this.inventoryOpen = !this.inventoryOpen;
         const panel = document.getElementById('inventory-panel');
-        if (panel) {
-            panel.style.display = this.inventoryOpen ? 'block' : 'none';
-        }
-        // Close shop if inventory opens
-        if (this.inventoryOpen && this.shopOpen) {
-            this.toggleShop();
-        }
+        const button = document.getElementById('inventory-button');
+
+        panel?.classList.toggle('open', this.inventoryOpen);
+        button?.classList.toggle('active', this.inventoryOpen);
+
         if (this.inventoryOpen) {
+            if (this.shopOpen) {
+                this.shopOpen = false;
+                const shopPanel = document.getElementById('shop-panel');
+                const shopButton = document.getElementById('shop-button');
+                shopPanel?.classList.remove('open');
+                shopButton?.classList.remove('active');
+            }
+
             this.updateInventoryUI();
         }
     }
@@ -1823,56 +1791,77 @@ export class GameEngine {
                 </div>
             `;
             
-            let abilityDisplay = `
+            const abilityDisplay = `
                 <div class="ability-cooldowns">
                     ${holyStrikeIcon}
                     ${windfuryIcon}
                     ${summonIcon}
                 </div>
             `;
-            
+
+            const rotationTrack = document.getElementById('rotation-track');
+            if (rotationTrack) {
+                rotationTrack.innerHTML = abilityDisplay;
+            }
+
+            const swingTimer = this.isSwinging && this.currentSwingTime > 0
+                ? `${(this.currentSwingTime / 1000).toFixed(1)}s`
+                : 'Ready';
+            const auraSparkline = document.getElementById('aura-sparkline');
+            if (auraSparkline) {
+                const segments = [
+                    windfuryActive ? '⚡ Windfury pulsing' : '⛔ Aura idle',
+                    `Summons ${this.summons.length}/${this.maxSummons}`,
+                    `Melee ${swingTimer}`
+                ];
+                auraSparkline.textContent = segments.join(' · ');
+            }
+
             const manaReservedText = windfuryActive ? ` (${Math.floor(this.player.baseMana * 0.5)} reserved)` : '';
-            
-            // Create summons display
+
             let summonsDisplay = '';
             if (this.summons.length > 0) {
-                summonsDisplay = '<div style="margin-top: 10px; padding: 5px; border: 1px solid #333; background: #1a1a1a;"><strong>Active Summons:</strong>';
-                this.summons.forEach((summon, index) => {
-                    const timeLeft = (summon.timeRemaining / 1000).toFixed(0);
+                const summonLines = this.summons.map((summon, index) => {
+                    const timeLeft = Math.max(0, summon.timeRemaining) / 1000;
                     const summonMinDmg = Math.round(summon.damage * CONFIG.DAMAGE_VARIANCE_MIN);
                     const summonMaxDmg = Math.round(summon.damage * CONFIG.DAMAGE_VARIANCE_MAX);
-                    summonsDisplay += `<div style="color: #d4d4d8;">💀 ${summon.name} #${index + 1} - HP: ${summon.hp}/${summon.maxHp} - Dmg: ${summonMinDmg}-${summonMaxDmg} - Time: ${timeLeft}s</div>`;
-                });
-                summonsDisplay += '</div>';
+                    return `<div class="summon-line">💀 ${summon.name} #${index + 1} · HP ${summon.hp}/${summon.maxHp} · Dmg ${summonMinDmg}-${summonMaxDmg} · ${timeLeft.toFixed(0)}s</div>`;
+                }).join('');
+
+                summonsDisplay = `
+                    <div class="summons-card">
+                        <div class="summons-title">Active Summons</div>
+                        ${summonLines}
+                    </div>
+                `;
             }
-            
+
             const playerMinDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MIN);
             const playerMaxDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MAX);
-            
+
             playerStats.innerHTML = `
-                <div><strong>Cleric</strong></div>
-                <div style="color: #ffd93d; font-weight: bold;">Gold: ${this.player.gold}</div>
-                <div>HP: ${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</div>
-                <div>Mana: ${this.player.mana}/${this.player.maxMana}${manaReservedText} (Regen: ${this.player.manaRegen}/s)</div>
-                <div>Damage: ${playerMinDamage}-${playerMaxDamage}</div>
-                <div>Armor: ${this.player.armor} (reduces damage taken)</div>
-                <div>Status: ${playerStatus}</div>
-                ${windfuryActive ? '<div style="color: #51cf66;">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
-                ${abilityDisplay}
+                <div class="stat-line"><span>Class</span><span>Cleric</span></div>
+                <div class="stat-line gold-line"><span>Gold</span><span>${this.player.gold}</span></div>
+                <div class="stat-line"><span>HP</span><span>${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</span></div>
+                <div class="stat-line"><span>Mana</span><span>${this.player.mana}/${this.player.maxMana}${manaReservedText} (Regen: ${this.player.manaRegen}/s)</span></div>
+                <div class="stat-line"><span>Damage</span><span>${playerMinDamage}-${playerMaxDamage}</span></div>
+                <div class="stat-line"><span>Armor</span><span>${this.player.armor}</span></div>
+                <div class="stat-line"><span>Status</span><span>${playerStatus}</span></div>
+                ${windfuryActive ? '<div class="stat-highlight">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
                 ${summonsDisplay}
             `;
         }
-        
+
         if (enemyStats) {
             const enemyNextAttack = ((this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
             const enemyMinDamage = Math.round(this.enemy.damage * CONFIG.DAMAGE_VARIANCE_MIN);
             const enemyMaxDamage = Math.round(this.enemy.damage * CONFIG.DAMAGE_VARIANCE_MAX);
-            
+
             enemyStats.innerHTML = `
-                <div><strong>${this.enemy.name}</strong></div>
-                <div>HP: ${this.enemy.hp}/${this.enemy.maxHp}</div>
-                <div>Damage: ${enemyMinDamage}-${enemyMaxDamage}</div>
-                <div>Next Attack: ${enemyNextAttack}s</div>
+                <div class="stat-line"><span>Target</span><span>${this.enemy.name}</span></div>
+                <div class="stat-line"><span>HP</span><span>${this.enemy.hp}/${this.enemy.maxHp}</span></div>
+                <div class="stat-line"><span>Damage</span><span>${enemyMinDamage}-${enemyMaxDamage}</span></div>
+                <div class="stat-line"><span>Next Attack</span><span>${enemyNextAttack}s</span></div>
             `;
         }
     }
