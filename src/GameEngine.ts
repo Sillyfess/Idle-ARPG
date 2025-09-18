@@ -121,6 +121,9 @@ export class GameEngine {
     private readonly maxInventorySize = 20;
     private inventoryOpen = false;
     private shopOpen = false;
+
+    private viewMode: 'mixed' | 'timeline' | 'arena' = 'mixed';
+    private timeScale: number = 1;
     
     // ========== INITIALIZATION ==========
     constructor() {
@@ -448,9 +451,9 @@ export class GameEngine {
     }
     
     // ========== ABILITIES ==========
-    private holyStrike: Ability;
-    private windfuryAura: any;  // Using any for now since it has different structure
-    private summonSkeleton: any;
+    private holyStrike!: Ability;
+    private windfuryAura!: any;  // Using any for now since it has different structure
+    private summonSkeleton!: any;
     
     private initializeAbilities() {
         const holyStrikeData = ABILITIES.holyStrike;
@@ -498,15 +501,37 @@ export class GameEngine {
     // ========== MAIN GAME LOOP ==========
     public tick() {
         const now = Date.now();
-        const deltaTime = now - this.lastUpdate;
+        const deltaTime = (now - this.lastUpdate) * this.timeScale;
         this.lastUpdate = now;
-        
-        this.updateMana(deltaTime);
-        this.updateTimers(deltaTime);
-        this.updateSummons(deltaTime);
+        this.runFrame(deltaTime);
+    }
+
+    public stepSimulation(deltaTime: number = CONFIG.TICK_RATE) {
+        const scaledDelta = Math.max(0, deltaTime) * this.timeScale;
+        this.runFrame(scaledDelta);
+        this.lastUpdate = Date.now();
+    }
+
+    public syncTime() {
+        this.lastUpdate = Date.now();
+    }
+
+    public setTimeScale(scale: number) {
+        this.timeScale = Math.max(0.1, scale);
+    }
+
+    public getTimeScale() {
+        return this.timeScale;
+    }
+
+    private runFrame(deltaTime: number) {
+        const effectiveDelta = Math.max(0, deltaTime);
+        this.updateMana(effectiveDelta);
+        this.updateTimers(effectiveDelta);
+        this.updateSummons(effectiveDelta);
         this.processPlayerAction();
-        this.processSummonActions(deltaTime);
-        this.processEnemyAction(deltaTime);
+        this.processSummonActions(effectiveDelta);
+        this.processEnemyAction(effectiveDelta);
         this.checkCombatEnd();
         this.updateUI();
     }
@@ -957,6 +982,33 @@ export class GameEngine {
                     break;
             }
         });
+
+        this.setViewMode(this.viewMode);
+    }
+
+    public setViewMode(mode: 'mixed' | 'timeline' | 'arena') {
+        this.viewMode = mode;
+
+        const arenaSection = document.getElementById('combat-arena-section');
+        const telemetryPanels = document.getElementById('telemetry-panels');
+
+        if (arenaSection) {
+            if (mode === 'timeline') {
+                arenaSection.classList.add('hidden');
+            } else {
+                arenaSection.classList.remove('hidden');
+            }
+        }
+
+        if (telemetryPanels) {
+            if (mode === 'arena') {
+                telemetryPanels.classList.add('hidden');
+            } else {
+                telemetryPanels.classList.remove('hidden');
+            }
+        }
+
+        document.body.setAttribute('data-view', mode);
     }
     
     // ========== SHOP UI ==========
@@ -966,33 +1018,39 @@ export class GameEngine {
         shopBtn.id = 'shop-button';
         shopBtn.innerHTML = `Shop [S]`;
         shopBtn.style.cssText = `
-            position: absolute;
-            top: 10px;
-            right: calc(50% - 280px);
-            padding: 8px 15px;
-            background: #2a2a2a;
-            border: 2px solid #444;
-            color: #d4d4d8;
+            position: fixed;
+            top: 96px;
+            right: 200px;
+            padding: 8px 14px;
+            background: rgba(30, 30, 70, 0.9);
+            border: 1px solid rgba(92, 92, 160, 0.6);
+            color: #f4f6ff;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 100;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            border-radius: 6px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+            z-index: 120;
         `;
         shopBtn.onclick = () => this.toggleShop();
-        
+
         // Create shop panel (hidden by default)
         const shopPanel = document.createElement('div');
         shopPanel.id = 'shop-panel';
         shopPanel.style.cssText = `
-            position: absolute;
-            top: 50px;
-            right: calc(50% - 280px);
-            width: 300px;
-            background: #1a1a1a;
-            border: 2px solid #444;
-            padding: 10px;
+            position: fixed;
+            top: 140px;
+            right: 36px;
+            width: 320px;
+            background: rgba(8, 8, 18, 0.95);
+            border: 1px solid rgba(70, 70, 110, 0.6);
+            padding: 14px;
             display: none;
-            z-index: 100;
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+            z-index: 115;
         `;
         
         document.body.appendChild(shopBtn);
@@ -1117,11 +1175,13 @@ export class GameEngine {
         const inventoryContainer = document.createElement('div');
         inventoryContainer.id = 'inventory-container';
         inventoryContainer.style.cssText = `
-            position: absolute;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 100;
+            position: fixed;
+            top: 96px;
+            right: 36px;
+            z-index: 120;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
         `;
         
         // Create inventory button
@@ -1129,13 +1189,17 @@ export class GameEngine {
         inventoryBtn.id = 'inventory-button';
         inventoryBtn.innerHTML = `Inventory (${this.inventory.length}/${this.maxInventorySize}) [I]`;
         inventoryBtn.style.cssText = `
-            padding: 8px 15px;
-            background: #2a2a2a;
-            border: 2px solid #444;
-            color: #d4d4d8;
+            padding: 8px 14px;
+            background: rgba(30, 30, 70, 0.9);
+            border: 1px solid rgba(92, 92, 160, 0.6);
+            color: #f4f6ff;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            border-radius: 6px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
         `;
         inventoryBtn.onclick = () => this.toggleInventory();
         
@@ -1144,16 +1208,17 @@ export class GameEngine {
         inventoryPanel.id = 'inventory-panel';
         inventoryPanel.style.cssText = `
             position: absolute;
-            top: 40px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 400px;
-            background: #1a1a1a;
-            border: 2px solid #444;
-            padding: 10px;
+            top: 52px;
+            right: 0;
+            width: 360px;
+            background: rgba(8, 8, 18, 0.95);
+            border: 1px solid rgba(70, 70, 110, 0.6);
+            padding: 14px;
             display: none;
-            max-height: 500px;
+            max-height: 520px;
             overflow-y: auto;
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
         `;
         
         inventoryContainer.appendChild(inventoryBtn);
@@ -1719,164 +1784,228 @@ export class GameEngine {
     private updateUI() {
         this.updateStats();
         this.updateBars();
+        this.updateTimelines();
         this.updateCombatLog();
         this.updateSummonHealthBars();
+
+        const ruleCount = document.getElementById('rule-count');
+        if (ruleCount) {
+            ruleCount.textContent = `${this.combatRules.length}`;
+        }
+
+        const ruleEfficiency = document.getElementById('rule-efficiency');
+        if (ruleEfficiency) {
+            let status = 'Live';
+            if (this.player.hp <= 0) {
+                status = 'Recovering';
+            } else if (this.globalCooldown > 0) {
+                status = 'Sequencing';
+            } else if (this.isSwinging) {
+                status = 'Executing';
+            } else if (this.activeAuras.has('windfury_aura')) {
+                status = 'Buffed';
+            }
+            ruleEfficiency.textContent = status;
+        }
     }
     
     private updateStats() {
         const playerStats = document.getElementById('player-stats');
         const enemyStats = document.getElementById('enemy-stats');
-        
-        if (playerStats) {
-            let playerStatus = 'Ready';
+        const playerStatusBadge = document.getElementById('player-status-badge');
+        const enemyStatusBadge = document.getElementById('enemy-status-badge');
+        const enemyNameElement = document.getElementById('enemy-name');
+
+        let playerStatus = 'Ready';
+        if (this.player.hp <= 0) {
+            playerStatus = 'Down';
+        } else if (this.isSwinging) {
+            const swingTimeLeft = Math.max(0, this.currentSwingTime / 1000).toFixed(1);
+            playerStatus = `Swinging ${swingTimeLeft}s`;
+        } else if (this.globalCooldown > 0) {
+            playerStatus = `GCD ${(this.globalCooldown / 1000).toFixed(1)}s`;
+        }
+
+        if (playerStatusBadge) {
+            playerStatusBadge.textContent = playerStatus;
             if (this.player.hp <= 0) {
-                playerStatus = 'Dead';
-            } else if (this.isSwinging) {
-                const swingTimeLeft = (this.currentSwingTime / 1000).toFixed(1);
-                playerStatus = `Swinging: ${swingTimeLeft}s`;
-            } else if (this.globalCooldown > 0) {
-                playerStatus = `GCD: ${(this.globalCooldown / 1000).toFixed(1)}s`;
-            }
-            
-            // Create ability cooldown display
-            const holyStrikeCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
-            const maxCooldown = this.holyStrike.cooldown || 6000;
-            const cooldownPercent = holyStrikeCooldown > 0 ? ((maxCooldown - holyStrikeCooldown) / maxCooldown) * 100 : 0;
-            const isOnCooldown = holyStrikeCooldown > 0;
-            const windfuryActive = this.activeAuras.has('windfury_aura');
-            
-            // Check if Holy Strike can be cast
-            const holyStrikeMana = this.player.mana >= this.holyStrike.manaCost;
-            const canCastHolyStrike = holyStrikeMana && !isOnCooldown && this.globalCooldown <= 0 && this.player.hp > 0;
-            
-            let holyStrikeIcon = '';
-            const minMeleeDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MIN);
-            const maxMeleeDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MAX);
-            const minHolyDamage = Math.round(minMeleeDamage * ABILITIES.holyStrike.damageMultiplier);
-            const maxHolyDamage = Math.round(maxMeleeDamage * ABILITIES.holyStrike.damageMultiplier);
-            const holyStrikeTooltip = `Holy Strike [1]&#10;Mana Cost: 25&#10;Cooldown: 6s&#10;Damage: ${minHolyDamage}-${maxHolyDamage} holy&#10;Heals you for damage dealt${windfuryActive ? '&#10;Can trigger Windfury!' : ''}&#10;&#10;Click or press 1 to cast`;
-            
-            if (isOnCooldown) {
-                holyStrikeIcon = `
-                    <div class="ability-icon${!canCastHolyStrike ? ' disabled' : ''}" 
-                         data-tooltip="${holyStrikeTooltip}"
-                         onclick="window.game.castHolyStrike()"
-                         style="cursor: ${canCastHolyStrike ? 'pointer' : 'not-allowed'};">
-                        <div class="ability-icon-content">H</div>
-                        <div class="cooldown-overlay"></div>
-                        <div class="cooldown-sweep" style="background: conic-gradient(transparent ${cooldownPercent}%, rgba(255, 255, 255, 0.3) ${cooldownPercent}%);"></div>
-                        <div class="cooldown-text">${(holyStrikeCooldown / 1000).toFixed(1)}</div>
-                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">1</div>
-                    </div>
-                `;
+                playerStatusBadge.classList.add('danger');
             } else {
-                holyStrikeIcon = `
-                    <div class="ability-icon${canCastHolyStrike ? ' ability-ready' : ' disabled'}" 
-                         data-tooltip="${holyStrikeTooltip}"
-                         onclick="window.game.castHolyStrike()"
-                         style="cursor: ${canCastHolyStrike ? 'pointer' : 'not-allowed'};">
-                        <div class="ability-icon-content"${!holyStrikeMana ? ' style="color: #666;"' : ''}>H</div>
-                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">1</div>
-                    </div>
-                `;
+                playerStatusBadge.classList.remove('danger');
             }
-            
-            // Windfury Aura toggle
-            const windfuryTooltip = `Windfury Aura [2]&#10;Reserves: 50% of max mana&#10;Effect: 20% chance for 2 extra attacks&#10;Works on melee AND Holy Strike!&#10;${windfuryActive ? 'ACTIVE - Click or press 2 to deactivate' : 'Click or press 2 to activate'}`;
-            
-            const windfuryIcon = windfuryActive ? `
-                <div class="ability-icon aura-active" 
-                     onclick="window.game.toggleWindfuryAura()" 
-                     style="cursor: pointer; background: #2a4a2a; border-color: #51cf66;" 
-                     data-tooltip="${windfuryTooltip}">
-                    <div class="ability-icon-content" style="color: #51cf66;">W</div>
-                    <div class="aura-indicator" style="position: absolute; top: -5px; right: -5px; width: 10px; height: 10px; background: #51cf66; border-radius: 50%; box-shadow: 0 0 5px #51cf66;"></div>
-                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">2</div>
-                </div>
-            ` : `
-                <div class="ability-icon" 
-                     onclick="window.game.toggleWindfuryAura()" 
-                     style="cursor: pointer;" 
-                     data-tooltip="${windfuryTooltip}">
-                    <div class="ability-icon-content">W</div>
-                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">2</div>
-                </div>
-            `;
-            
-            // Summon Skeleton ability
-            const canSummon = this.summons.length < this.maxSummons;
-            const summonMana = this.player.mana >= this.summonSkeleton.manaCost;
-            const canCastSummon = summonMana && canSummon && this.globalCooldown <= 0 && this.player.hp > 0;
-            
-            const summonBaseDamage = Math.round(this.player.damage * this.summonSkeleton.summonDamageMultiplier);
-            const minDamage = Math.round(summonBaseDamage * CONFIG.DAMAGE_VARIANCE_MIN);
-            const maxDamage = Math.round(summonBaseDamage * CONFIG.DAMAGE_VARIANCE_MAX);
-            const summonTooltip = `Summon Skeleton [3]&#10;Mana Cost: 50&#10;Duration: 30s&#10;Damage: ${minDamage}-${maxDamage} per attack&#10;HP: ${ENEMIES.skeleton.hp}&#10;Max Summons: ${this.maxSummons}&#10;Current: ${this.summons.length}/${this.maxSummons}&#10;&#10;Click or press 3 to summon`;
-            
-            const summonIcon = `
-                <div class="ability-icon${canCastSummon ? ' ability-ready' : ' disabled'}" 
-                     data-tooltip="${summonTooltip}"
-                     onclick="window.game.castSummonSkeleton()"
-                     style="cursor: ${canCastSummon ? 'pointer' : 'not-allowed'};">
-                    <div class="ability-icon-content"${!summonMana || !canSummon ? ' style="color: #666;"' : ''}>💀</div>
-                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">3</div>
+        }
+
+        const holyStrikeCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+        const maxCooldown = this.holyStrike.cooldown || 6000;
+        const cooldownPercent = holyStrikeCooldown > 0 ? ((maxCooldown - holyStrikeCooldown) / maxCooldown) * 100 : 0;
+        const isOnCooldown = holyStrikeCooldown > 0;
+        const windfuryActive = this.activeAuras.has('windfury_aura');
+
+        const holyStrikeMana = this.player.mana >= this.holyStrike.manaCost;
+        const canCastHolyStrike = holyStrikeMana && !isOnCooldown && this.globalCooldown <= 0 && this.player.hp > 0;
+
+        let holyStrikeIcon = '';
+        const minMeleeDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MIN);
+        const maxMeleeDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MAX);
+        const minHolyDamage = Math.round(minMeleeDamage * ABILITIES.holyStrike.damageMultiplier);
+        const maxHolyDamage = Math.round(maxMeleeDamage * ABILITIES.holyStrike.damageMultiplier);
+        const holyStrikeTooltip = `Holy Strike [1]&#10;Mana Cost: 25&#10;Cooldown: 6s&#10;Damage: ${minHolyDamage}-${maxHolyDamage} holy&#10;Heals you for damage dealt${windfuryActive ? '&#10;Can trigger Windfury!' : ''}&#10;&#10;Click or press 1 to cast`;
+
+        if (isOnCooldown) {
+            holyStrikeIcon = `
+                <div class="ability-icon${!canCastHolyStrike ? ' disabled' : ''}"
+                     data-tooltip="${holyStrikeTooltip}"
+                     onclick="window.game.castHolyStrike()"
+                     style="cursor: ${canCastHolyStrike ? 'pointer' : 'not-allowed'};">
+                    <div class="ability-icon-content">H</div>
+                    <div class="cooldown-overlay"></div>
+                    <div class="cooldown-sweep" style="background: conic-gradient(transparent ${cooldownPercent}%, rgba(255, 255, 255, 0.3) ${cooldownPercent}%);"></div>
+                    <div class="cooldown-text">${(holyStrikeCooldown / 1000).toFixed(1)}</div>
+                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">1</div>
                 </div>
             `;
-            
-            let abilityDisplay = `
-                <div class="ability-cooldowns">
-                    ${holyStrikeIcon}
-                    ${windfuryIcon}
-                    ${summonIcon}
+        } else {
+            holyStrikeIcon = `
+                <div class="ability-icon${canCastHolyStrike ? ' ability-ready' : ' disabled'}"
+                     data-tooltip="${holyStrikeTooltip}"
+                     onclick="window.game.castHolyStrike()"
+                     style="cursor: ${canCastHolyStrike ? 'pointer' : 'not-allowed'};">
+                    <div class="ability-icon-content"${!holyStrikeMana ? ' style="color: #666;"' : ''}>H</div>
+                    <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">1</div>
                 </div>
             `;
-            
-            const manaReservedText = windfuryActive ? ` (${Math.floor(this.player.baseMana * 0.5)} reserved)` : '';
-            
-            // Create summons display
-            let summonsDisplay = '';
-            if (this.summons.length > 0) {
-                summonsDisplay = '<div style="margin-top: 10px; padding: 5px; border: 1px solid #333; background: #1a1a1a;"><strong>Active Summons:</strong>';
-                this.summons.forEach((summon, index) => {
-                    const timeLeft = (summon.timeRemaining / 1000).toFixed(0);
+        }
+
+        const windfuryTooltip = `Windfury Aura [2]&#10;Reserves: 50% of max mana&#10;Effect: 20% chance for 2 extra attacks&#10;Works on melee AND Holy Strike!&#10;${windfuryActive ? 'ACTIVE - Click or press 2 to deactivate' : 'Click or press 2 to activate'}`;
+
+        const windfuryIcon = windfuryActive ? `
+            <div class="ability-icon aura-active"
+                 onclick="window.game.toggleWindfuryAura()"
+                 style="cursor: pointer; background: #2a4a2a; border-color: #51cf66;"
+                 data-tooltip="${windfuryTooltip}">
+                <div class="ability-icon-content" style="color: #51cf66;">W</div>
+                <div class="aura-indicator" style="position: absolute; top: -5px; right: -5px; width: 10px; height: 10px; background: #51cf66; border-radius: 50%; box-shadow: 0 0 5px #51cf66;"></div>
+                <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">2</div>
+            </div>
+        ` : `
+            <div class="ability-icon"
+                 onclick="window.game.toggleWindfuryAura()"
+                 style="cursor: pointer;"
+                 data-tooltip="${windfuryTooltip}">
+                <div class="ability-icon-content">W</div>
+                <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">2</div>
+            </div>
+        `;
+
+        const canSummon = this.summons.length < this.maxSummons;
+        const summonMana = this.player.mana >= this.summonSkeleton.manaCost;
+        const canCastSummon = summonMana && canSummon && this.globalCooldown <= 0 && this.player.hp > 0;
+
+        const summonBaseDamage = Math.round(this.player.damage * this.summonSkeleton.summonDamageMultiplier);
+        const minDamage = Math.round(summonBaseDamage * CONFIG.DAMAGE_VARIANCE_MIN);
+        const maxDamage = Math.round(summonBaseDamage * CONFIG.DAMAGE_VARIANCE_MAX);
+        const summonTooltip = `Summon Skeleton [3]&#10;Mana Cost: 50&#10;Duration: 30s&#10;Damage: ${minDamage}-${maxDamage} per attack&#10;HP: ${ENEMIES.skeleton.hp}&#10;Max Summons: ${this.maxSummons}&#10;Current: ${this.summons.length}/${this.maxSummons}&#10;&#10;Click or press 3 to summon`;
+
+        const summonIcon = `
+            <div class="ability-icon${canCastSummon ? ' ability-ready' : ' disabled'}"
+                 data-tooltip="${summonTooltip}"
+                 onclick="window.game.castSummonSkeleton()"
+                 style="cursor: ${canCastSummon ? 'pointer' : 'not-allowed'};">
+                <div class="ability-icon-content"${!summonMana || !canSummon ? ' style="color: #666;"' : ''}>💀</div>
+                <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #666; font-weight: bold;">3</div>
+            </div>
+        `;
+
+        const abilityDisplay = `
+            <div class="ability-cooldowns">
+                ${holyStrikeIcon}
+                ${windfuryIcon}
+                ${summonIcon}
+            </div>
+        `;
+
+        const manaReservedText = windfuryActive ? ` (${Math.floor(this.player.baseMana * 0.5)} reserved)` : '';
+        const playerMinDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MIN);
+        const playerMaxDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MAX);
+        const hpPercent = (this.player.hp / this.player.maxHp) * 100;
+
+        let summonsDisplay = '';
+        if (this.summons.length > 0) {
+            const summonRows = this.summons
+                .map((summon, index) => {
+                    const timeLeft = Math.max(0, summon.timeRemaining / 1000).toFixed(0);
                     const summonMinDmg = Math.round(summon.damage * CONFIG.DAMAGE_VARIANCE_MIN);
                     const summonMaxDmg = Math.round(summon.damage * CONFIG.DAMAGE_VARIANCE_MAX);
-                    summonsDisplay += `<div style="color: #d4d4d8;">💀 ${summon.name} #${index + 1} - HP: ${summon.hp}/${summon.maxHp} - Dmg: ${summonMinDmg}-${summonMaxDmg} - Time: ${timeLeft}s</div>`;
-                });
-                summonsDisplay += '</div>';
-            }
-            
-            const playerMinDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MIN);
-            const playerMaxDamage = Math.round(this.player.damage * CONFIG.DAMAGE_VARIANCE_MAX);
-            
+                    return `<div class="summon-row">💀 ${summon.name} #${index + 1} · HP: ${summon.hp}/${summon.maxHp} · DMG: ${summonMinDmg}-${summonMaxDmg} · ${timeLeft}s</div>`;
+                })
+                .join('');
+
+            summonsDisplay = `
+                <div class="summon-status">
+                    <span class="section-label">Active Summons</span>
+                    ${summonRows}
+                </div>
+            `;
+        }
+
+        if (playerStats) {
             playerStats.innerHTML = `
-                <div><strong>Cleric</strong></div>
-                <div style="color: #ffd93d; font-weight: bold;">Gold: ${this.player.gold}</div>
-                <div>HP: ${this.player.hp}/${this.player.maxHp} (${(this.player.hp / this.player.maxHp * 100).toFixed(0)}%)</div>
-                <div>Mana: ${this.player.mana}/${this.player.maxMana}${manaReservedText} (Regen: ${this.player.manaRegen}/s)</div>
-                <div>Damage: ${playerMinDamage}-${playerMaxDamage}</div>
-                <div>Armor: ${this.player.armor} (reduces damage taken)</div>
-                <div>Status: ${playerStatus}</div>
-                ${windfuryActive ? '<div style="color: #51cf66;">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
+                <div class="entity-metrics">
+                    <div><span class="label">HP</span><span class="value">${this.player.hp}/${this.player.maxHp} (${hpPercent.toFixed(0)}%)</span></div>
+                    <div><span class="label">Mana</span><span class="value">${this.player.mana}/${this.player.maxMana}${manaReservedText}</span></div>
+                    <div><span class="label">Mana Regen</span><span class="value">${this.player.manaRegen}/s</span></div>
+                    <div><span class="label">Damage</span><span class="value">${playerMinDamage}-${playerMaxDamage}</span></div>
+                    <div><span class="label">Gold</span><span class="value">${this.player.gold}</span></div>
+                    <div><span class="label">Status</span><span class="value">${playerStatus}</span></div>
+                </div>
+                <div class="resist-grid">
+                    <div class="resist-item"><span class="resist-icon">🛡️</span><span class="resist-value">${this.player.armor}</span><span class="resist-label">Armor</span></div>
+                    <div class="resist-item"><span class="resist-icon">✝️</span><span class="resist-value">--</span><span class="resist-label">Holy</span></div>
+                    <div class="resist-item"><span class="resist-icon">☄️</span><span class="resist-value">--</span><span class="resist-label">Arcane</span></div>
+                </div>
+                ${windfuryActive ? '<div style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #51cf66;">⚡ Windfury Active (20% chance for 2 extra attacks)</div>' : ''}
                 ${abilityDisplay}
                 ${summonsDisplay}
             `;
         }
-        
+
+        if (enemyNameElement) {
+            enemyNameElement.textContent = this.enemy.name;
+        }
+
         if (enemyStats) {
-            const enemyNextAttack = ((this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000).toFixed(1);
+            const enemyNextAttackValue = Math.max(0, (this.currentEnemyType.attackSpeed - this.enemyAttackTimer) / 1000);
+            const enemyNextAttack = enemyNextAttackValue.toFixed(1);
             const enemyMinDamage = Math.round(this.enemy.damage * CONFIG.DAMAGE_VARIANCE_MIN);
             const enemyMaxDamage = Math.round(this.enemy.damage * CONFIG.DAMAGE_VARIANCE_MAX);
-            
+
+            if (enemyStatusBadge) {
+                if (this.enemy.hp <= 0) {
+                    enemyStatusBadge.textContent = 'Defeated';
+                    enemyStatusBadge.classList.add('danger');
+                } else {
+                    enemyStatusBadge.textContent = `Next ${enemyNextAttack}s`;
+                    enemyStatusBadge.classList.remove('danger');
+                }
+            }
+
             enemyStats.innerHTML = `
-                <div><strong>${this.enemy.name}</strong></div>
-                <div>HP: ${this.enemy.hp}/${this.enemy.maxHp}</div>
-                <div>Damage: ${enemyMinDamage}-${enemyMaxDamage}</div>
-                <div>Next Attack: ${enemyNextAttack}s</div>
+                <div class="entity-metrics">
+                    <div><span class="label">HP</span><span class="value">${this.enemy.hp}/${this.enemy.maxHp}</span></div>
+                    <div><span class="label">Damage</span><span class="value">${enemyMinDamage}-${enemyMaxDamage}</span></div>
+                    <div><span class="label">Attack Speed</span><span class="value">${(this.currentEnemyType.attackSpeed / 1000).toFixed(1)}s</span></div>
+                    <div><span class="label">Next Attack</span><span class="value">${enemyNextAttack}s</span></div>
+                </div>
+                <div class="resist-grid">
+                    <div class="resist-item"><span class="resist-icon">🛡️</span><span class="resist-value">0</span><span class="resist-label">Armor</span></div>
+                    <div class="resist-item"><span class="resist-icon">✝️</span><span class="resist-value">--</span><span class="resist-label">Holy</span></div>
+                    <div class="resist-item"><span class="resist-icon">☄️</span><span class="resist-value">--</span><span class="resist-label">Arcane</span></div>
+                </div>
             `;
         }
     }
-    
+
+
     private updateBars() {
         // Player health bar
         const playerHealthBar = document.getElementById('player-health-bar') as HTMLElement;
@@ -1888,7 +2017,7 @@ export class GameEngine {
                 healthText.textContent = `${this.player.hp}/${this.player.maxHp}`;
             }
         }
-        
+
         // Player mana bar
         const playerManaBar = document.getElementById('player-mana-bar') as HTMLElement;
         if (playerManaBar) {
@@ -1899,7 +2028,7 @@ export class GameEngine {
                 manaText.textContent = `${this.player.mana}/${this.player.maxMana}`;
             }
         }
-        
+
         // Enemy health bar
         const enemyHealthBar = document.getElementById('enemy-health-bar') as HTMLElement;
         if (enemyHealthBar) {
@@ -1908,6 +2037,86 @@ export class GameEngine {
             const healthText = enemyHealthBar.querySelector('.bar-text');
             if (healthText) {
                 healthText.textContent = `${this.enemy.hp}/${this.enemy.maxHp}`;
+            }
+        }
+    }
+
+    private updateTimelines() {
+        const meleeBar = document.getElementById('timeline-melee') as HTMLElement | null;
+        const meleeText = document.getElementById('timeline-melee-text');
+        if (meleeBar && meleeText) {
+            if (this.isSwinging) {
+                const elapsed = PLAYER_CONFIG.MELEE_SWING_TIME - this.currentSwingTime;
+                const percent = Math.max(0, Math.min(100, (elapsed / PLAYER_CONFIG.MELEE_SWING_TIME) * 100));
+                meleeBar.style.width = `${percent}%`;
+                meleeText.textContent = `${Math.max(0, this.currentSwingTime / 1000).toFixed(1)}s left`;
+            } else {
+                meleeBar.style.width = '0%';
+                meleeText.textContent = 'Ready';
+            }
+        }
+
+        const holyBar = document.getElementById('timeline-holy-strike') as HTMLElement | null;
+        const holyText = document.getElementById('timeline-holy-strike-text');
+        if (holyBar && holyText) {
+            const holyCooldown = this.abilityCooldowns.get(this.holyStrike.id) || 0;
+            const maxCooldown = this.holyStrike.cooldown || 6000;
+            if (holyCooldown > 0) {
+                const percent = Math.max(0, Math.min(100, ((maxCooldown - holyCooldown) / maxCooldown) * 100));
+                holyBar.style.width = `${percent}%`;
+                holyText.textContent = `${(holyCooldown / 1000).toFixed(1)}s`;
+            } else {
+                holyBar.style.width = '100%';
+                holyText.textContent = 'Ready';
+            }
+        }
+
+        const gcdBar = document.getElementById('timeline-gcd') as HTMLElement | null;
+        const gcdText = document.getElementById('timeline-gcd-text');
+        if (gcdBar && gcdText) {
+            if (this.globalCooldown > 0) {
+                const percent = Math.max(0, Math.min(100, ((CONFIG.GLOBAL_COOLDOWN - this.globalCooldown) / CONFIG.GLOBAL_COOLDOWN) * 100));
+                gcdBar.style.width = `${percent}%`;
+                gcdText.textContent = `${(this.globalCooldown / 1000).toFixed(1)}s`;
+            } else {
+                gcdBar.style.width = '100%';
+                gcdText.textContent = 'Open';
+            }
+        }
+
+        const windfuryBar = document.getElementById('timeline-windfury') as HTMLElement | null;
+        const windfuryText = document.getElementById('timeline-windfury-text');
+        if (windfuryBar && windfuryText) {
+            if (this.activeAuras.has('windfury_aura')) {
+                windfuryBar.style.width = '100%';
+                windfuryText.textContent = 'Active';
+            } else {
+                windfuryBar.style.width = '0%';
+                windfuryText.textContent = 'Inactive';
+            }
+        }
+
+        const summonList = document.getElementById('summon-timeline-list');
+        if (summonList) {
+            if (this.summons.length === 0) {
+                summonList.innerHTML = '<div class="timeline-empty">No active summons</div>';
+            } else {
+                const duration = this.summonSkeleton.duration || 30000;
+                summonList.innerHTML = this.summons
+                    .map((summon, index) => {
+                        const percent = Math.max(0, Math.min(100, (summon.timeRemaining / duration) * 100));
+                        const seconds = Math.max(0, summon.timeRemaining / 1000);
+                        return `
+                            <div class="summon-bar">
+                                <div class="summon-name">#${index + 1} ${summon.name}</div>
+                                <div class="timeline-bar small">
+                                    <div class="timeline-progress" style="width: ${percent}%"></div>
+                                    <span class="timeline-text">${seconds.toFixed(0)}s</span>
+                                </div>
+                            </div>
+                        `;
+                    })
+                    .join('');
             }
         }
     }
