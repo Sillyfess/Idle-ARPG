@@ -64,7 +64,7 @@ Central configuration hub containing:
 - **Type definitions**: Comprehensive condition types for the AI system
 
 ### TypeScript Configuration
-- **Module system**: ESNext modules with NodeNext resolution for modern import/export
+- **Module system**: ESNext modules with Node resolution for modern import/export
 - **Target**: ES2020 with DOM library support
 - **Strict mode**: Full strict type checking enabled
 - **Source maps**: Enabled for development debugging
